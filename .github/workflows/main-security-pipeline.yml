@@ -56,29 +56,30 @@ jobs:
           name: semgrep-report
           path: semgrep-results.json
 
-  # 3. SCA (SNYK) - Análisis de pom.xml
+  # 3. SCA (SNYK) - Actualizado para generar JSON y evitar warnings
   dependency-scan:
     name: "3. SCA (Snyk)"
     needs: secrets-audit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Código
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4 
+
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v4 
         with:
           java-version: ${{ inputs.java-version }}
           distribution: 'temurin'
-          cache: 'maven'
-      - name: Run Snyk SCA
-        uses: snyk/actions/maven@master
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: --json-file-output=snyk-results.json
-        continue-on-error: true
+
+      - name: Run Snyk SCA (Forzar JSON)
+        run: |
+          npm install -g snyk
+          snyk auth ${{ secrets.SNYK_TOKEN }}
+          snyk test --json > snyk-results.json
+        continue-on-error: true 
+
       - name: Upload Snyk Report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4 
         with:
           name: snyk-report
           path: snyk-results.json
