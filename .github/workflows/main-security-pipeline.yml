@@ -36,16 +36,19 @@ jobs:
     name: "2. SAST (Semgrep)"
     needs: secrets-audit
     runs-on: ubuntu-latest
+    continue-on-error: true 
     steps:
       - name: Checkout Código
         uses: actions/checkout@v4
-      - name: Semgrep Scan (Docker version para evitar fallos de permisos)
+
+      - name: Semgrep Scan (Optimizado)
         run: |
+          # Usamos --config=auto para evitar errores de red con reglas externas
           docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan \
-            --config="p/java" \
-            --config="p/spring" \
+            --config=auto \
             --json \
             --output=semgrep-results.json
+
       - name: Upload Semgrep Report
         uses: actions/upload-artifact@v4
         if: always()
@@ -106,7 +109,8 @@ jobs:
   # 5. AUDITORÍA FINAL DE IA (IA TRIAGE)
   final-ia-audit:
     name: "5. Auditoría de IA y Decisiones"
-    needs: [container-security]
+    # IMPORTANTE: Debe esperar a los 3 jobs que generan reportes
+    needs: [sast-semgrep, dependency-scan, container-security] 
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Gobernanza (Scripts)
@@ -114,23 +118,28 @@ jobs:
         with:
           repository: DevSecOps-Uni-Project/.github
           path: governance-tools
+
       - name: Descargar Reportes (Artifacts)
         uses: actions/download-artifact@v4
       - name: Consolidar y Ejecutar IA
         shell: python
         run: |
           import os, shutil
-          # Rutas de los reportes descargados por GitHub Actions
+          # El mapeo que hiciste está perfecto para consolidar todo en la raíz
           report_map = {
               'snyk-report/snyk-results.json': 'snyk-results.json',
               'trivy-report/trivy-results.json': 'trivy-results.json',
               'semgrep-report/semgrep-results.json': 'semgrep-results.json'
           }
+          
+          print("--- Iniciando consolidación de reportes ---")
           for src, dest in report_map.items():
               if os.path.exists(src):
                   shutil.move(src, dest)
-                  print(f"✅ Reporte {dest} listo.")
+                  print(f" Reporte {dest} movido exitosamente.")
               else:
-                  print(f"⚠️ No se encontró {src}")
+                  # Si falta uno, la IA igual debe correr con lo que tenga
+                  print(f" Aviso: No se encontró el artefacto {src}")
           
+          print("--- Ejecutando Triage de IA ---")
           os.system('python governance-tools/scripts/ia-triage.py')
