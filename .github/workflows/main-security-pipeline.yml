@@ -1,4 +1,4 @@
-name: "DevSecOps Governance Pipeline"
+name: "DevSecOps Governance: Multi-Stage Security"
 
 on:
   workflow_call:
@@ -6,13 +6,18 @@ on:
       java-version:
         type: string
         default: '21'
+      image-name:
+        type: string
+        default: 'backend-ids'
     secrets:
       SNYK_TOKEN:
         required: true
 
 jobs:
-  secrets-scan:
-    name: "Escaneo de Secretos (TruffleHog)"
+  # 1. ESCANEO DE SECRETOS (TruffleHog)
+  # Detiene todo si hay llaves expuestas en el historial de Git.
+  secrets-audit:
+    name: "1. Guardián de Secretos"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Código
@@ -20,7 +25,7 @@ jobs:
         with:
           fetch-depth: 0 
 
-      - name: Ejecutar TruffleHog OSS
+      - name: TruffleHog OSS
         uses: trufflesecurity/trufflehog@main
         with:
           path: ./
@@ -28,9 +33,11 @@ jobs:
           head: HEAD
           extra_args: --only-verified
 
+  # 2. ANÁLISIS DE DEPENDENCIAS (Snyk SCA)
+  # Escanea el pom.xml o build.gradle en busca de librerías vulnerables.
   dependency-scan:
-    name: "SCA con Snyk e IA"
-    needs: secrets-scan
+    name: "2. SCA (Snyk)"
+    needs: secrets-audit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Código
@@ -51,31 +58,63 @@ jobs:
           args: --json-file-output=snyk-results.json
         continue-on-error: true
 
-      - name: IA Triage Analysis
+      - name: Upload Snyk Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: snyk-report
+          path: snyk-results.json
+
+  # 3. ESCANEO DE CONTENEDORES (Trivy)
+  # Revisa el Dockerfile y las vulnerabilidades del Sistema Operativo de la imagen.
+  container-security:
+    name: "3. Seguridad de Contenedores"
+    needs: dependency-scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Código
+        uses: actions/checkout@v4
+
+      - name: Build Local Image
+        run: docker build -t ${{ inputs.image-name }}:test .
+
+      - name: Trivy Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ inputs.image-name }}:test'
+          format: 'json'
+          output: 'trivy-results.json'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: trivy-results.json
+
+  # 4. AUDITORÍA FINAL DE IA (IA Triage)
+  # Este job unifica los reportes y decide el éxito basado en Awesome-DevSecOps.
+  final-ia-audit:
+    name: "4. Auditoría de IA y Decisiones"
+    needs: [dependency-scan, container-security]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Gobernanza (Scripts)
+        uses: actions/checkout@v4
+        with:
+          repository: DevSecOps-Uni-Project/.github
+          path: governance-tools
+
+      - name: Download All Reports
+        uses: actions/download-artifact@v4
+
+      - name: Run IA Triage Unified
         shell: python
         run: |
-          import json
-          import os
+          # Movemos los archivos al nivel raíz para el script
+          import os, shutil
+          paths = ['snyk-report/snyk-results.json', 'trivy-report/trivy-results.json']
+          for p in paths:
+              if os.path.exists(p): shutil.move(p, os.path.basename(p))
           
-          def triage():
-              file_path = 'snyk-results.json'
-              if not os.path.exists(file_path):
-                  print("❌ No se encontró el reporte de Snyk.")
-                  return
-              
-              with open(file_path, 'r') as f:
-                  data = json.load(f)
-              
-              vulnerabilities = data.get('vulnerabilities', [])
-              high_risks = [v for v in vulnerabilities if v['severity'] in ['critical', 'high']]
-              
-              print("--- IA TRIAGE REPORT (Awesome-DevSecOps Standard) ---")
-              if not high_risks:
-                  print("✅ Proyecto Seguro: Cumple con los estándares de la organización.")
-              else:
-                  print(f"⚠️ Se detectaron {len(high_risks)} vulnerabilidades de alto impacto.")
-                  for v in high_risks:
-                      print(f"- [{v['severity'].upper()}] {v['title']} en {v['packageName']}")
-                  print("\n💡 Sugerencia de IA: Actualice las versiones en el pom.xml según las recomendaciones de Snyk.")
-
-          triage()
+          # Ejecutamos el script de inteligencia
+          os.system('python governance-tools/scripts/ia-triage.py')

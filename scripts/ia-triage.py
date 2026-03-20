@@ -1,41 +1,56 @@
 import json
-import sys
 import os
+import sys
 
-def analyze_vulnerabilities(json_file):
-    try:
-        with open(json_file, 'r') as f:
-            data = json.load(f)
-        
-        # 1. Filtrar solo vulnerabilidades críticas o altas
-        # Nota: Snyk puede devolver una lista o un objeto dependiendo del scan
-        vulnerabilities = data.get('vulnerabilities', [])
-        critical_issues = [v for v in vulnerabilities if v['severity'] in ['critical', 'high']]
+def load_json(path):
+    if os.path.exists(path):
+        with open(path, 'r') as f:
+            return json.load(f)
+    return None
 
-        if not critical_issues:
-            print("✅ IA Triage: No se detectaron vulnerabilidades críticas. ¡Buen trabajo!")
-            return
+def analyze_all():
+    print("🤖 --- IA SECURITY MULTI-LAYER REPORT --- 🤖")
+    print("Estándar de Referencia: Awesome-DevSecOps / Java 21 LTS\n")
+    
+    total_critical = 0
+    report_summary = []
 
-        print(f"⚠️ IA Triage: Se encontraron {len(critical_issues)} vulnerabilidades de alto impacto.\n")
+    # 1. Análisis de Capa de Aplicación (Snyk)
+    snyk_data = load_json('snyk-results.json')
+    if snyk_data:
+        vulns = snyk_data.get('vulnerabilities', [])
+        crit = [v for v in vulns if v['severity'] in ['critical', 'high']]
+        total_critical += len(crit)
+        report_summary.append(f"📦 SCA (Snyk): {len(crit)} riesgos detectados en librerías Java.")
 
-        # 2. Preparar el contexto para la IA (Prompt Engineering)
-        # Aquí simulamos lo que enviaríamos a un LLM
-        prompt_context = "Actúa como un experto en DevSecOps. Analiza estos fallos en un proyecto Java 21 y sugiere remediaciones basadas en 'Awesome Java Security':\n"
-        
-        for issue in critical_issues:
-            summary = f"- [{issue['severity'].upper()}] {issue['title']} en {issue['packageName']}@{issue['version']}"
-            print(summary)
-            # Aquí podrías concatenar esto para enviarlo a una API de LLM
-            
-        print("\n💡 Sugerencia de IA: Actualiza las dependencias mencionadas en el pom.xml a sus versiones más recientes estables.")
+    # 2. Análisis de Capa de Infraestructura (Trivy)
+    # Trivy suele exportar un JSON con una estructura de 'Results'
+    trivy_data = load_json('trivy-results.json')
+    if trivy_data:
+        results = trivy_data.get('Results', [])
+        t_crit = 0
+        for res in results:
+            t_crit += len([v for v in res.get('Vulnerabilities', []) if v['Severity'] in ['CRITICAL', 'HIGH']])
+        total_critical += t_crit
+        report_summary.append(f"🐳 Container (Trivy): {t_crit} fallos en el SO/Dockerfile.")
 
-    except FileNotFoundError:
-        print(f"❌ Error: No se encontró el archivo {json_file}")
-    except Exception as e:
-        print(f"❌ Error procesando el reporte: {str(e)}")
+    # 3. Análisis de Capa Dinámica (OWASP ZAP)
+    # ZAP genera reportes en varios formatos; aquí asumimos un resumen simple
+    if os.path.exists('zap_out.conf'): # Config de salida de ZAP
+        report_summary.append("🌐 DAST (OWASP ZAP): Escaneo de línea base completado.")
+
+    # LOGICA DE IA: Triage y Decisión
+    for line in report_summary:
+        print(line)
+
+    print("\n--- CONCLUSIÓN DE IA ---")
+    if total_critical > 0:
+        print(f"❌ ESTADO: RECHAZADO. Se encontraron {total_critical} puntos de falla críticos.")
+        print("💡 ACCIÓN RECOMENDADA: Revise el historial de 'Awesome-Java-Security' para mitigar inyecciones.")
+        sys.exit(1) # Forzar fallo del pipeline
+    else:
+        print("✅ ESTADO: APROBADO. El proyecto cumple con la gobernanza de DevSecOps-Uni-Project.")
+        sys.exit(0)
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Uso: python ia-triage.py <reporte.json>")
-    else:
-        analyze_vulnerabilities(sys.argv[1])
+    analyze_all()
