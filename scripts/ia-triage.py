@@ -3,17 +3,26 @@ import os
 import sys
 
 def load_json_safely(file_path):
-    """Carga archivos JSON manejando errores de formato y archivos faltantes."""
     if not os.path.exists(file_path):
-        print(f"⚠️ Aviso: No se encontró el archivo {file_path}. Saltando análisis.")
         return None
     try:
         with open(file_path, 'r') as f:
             content = f.read().strip()
             if not content:
                 return None
-            # Si Snyk manda múltiples JSON o una lista, capturamos el objeto principal
-            data = json.loads(content)
+            
+            # Intento de carga normal
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError:
+                # Si falla, intentamos extraer solo el primer objeto JSON válido
+                # Snyk a veces pega un JSON tras otro; esto corta en el primer cierre válido
+                import re
+                first_json = re.split(r'}\s*{', content)[0]
+                if not first_json.endswith('}'):
+                    first_json += '}'
+                data = json.loads(first_json)
+            
             if isinstance(data, list) and len(data) > 0:
                 return data[0]
             return data
@@ -25,6 +34,12 @@ def analyze_all():
     print("\n" + "="*55)
     print("🤖 IA SECURITY TRIAGE REPORT - PROYECTO IDS")
     print("Estándar: Awesome-DevSecOps | Java 21 LTS")
+
+    repo_name = os.getenv('GITHUB_REPOSITORY', 'Proyecto Local')
+    branch_name = os.getenv('GITHUB_REF_NAME', 'Main')
+    print(f"📌 Target: {repo_name} | Branch: {branch_name}")
+
+    
     print("="*55 + "\n")
     
     total_critical = 0
