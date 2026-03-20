@@ -14,7 +14,7 @@ on:
         required: true
 
 jobs:
-  # 1. ESCANEO DE SECRETOS
+  # 1. ESCANEO DE SECRETOS (TruffleHog)
   secrets-audit:
     name: "1. Guardián de Secretos"
     runs-on: ubuntu-latest
@@ -41,11 +41,14 @@ jobs:
       - name: Checkout Código
         uses: actions/checkout@v4
 
-      - name: Semgrep Scan (Optimizado)
+      - name: Semgrep Scan (Java & Spring Focus)
         run: |
-          # Usamos --config=auto para evitar errores de red con reglas externas
+          # Modificado: Ignoramos mvnw para evitar el Syntax Error y enfocamos en Java/Spring
           docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan \
-            --config=auto \
+            --config="p/java" \
+            --config="p/spring" \
+            --ignore "mvnw*" \
+            --ignore ".mvn/" \
             --json \
             --output=semgrep-results.json
 
@@ -56,7 +59,7 @@ jobs:
           name: semgrep-report
           path: semgrep-results.json
 
-  # 3. SCA (SNYK) - Actualizado para generar JSON y evitar warnings
+  # 3. SCA (SNYK) - Escaneo de Dependencias Maven
   dependency-scan:
     name: "3. SCA (Snyk)"
     needs: secrets-audit
@@ -71,11 +74,12 @@ jobs:
           java-version: ${{ inputs.java-version }}
           distribution: 'temurin'
 
-      - name: Run Snyk SCA (Forzar JSON)
+      - name: Run Snyk SCA (Forzar Maven)
         run: |
           npm install -g snyk
           snyk auth ${{ secrets.SNYK_TOKEN }}
-          snyk test --json > snyk-results.json
+          # Modificado: Forzamos --file=pom.xml para evitar que intente buscar node_modules
+          snyk test --file=pom.xml --json > snyk-results.json || true
         continue-on-error: true 
 
       - name: Upload Snyk Report
@@ -110,10 +114,14 @@ jobs:
   # 5. AUDITORÍA FINAL DE IA (IA TRIAGE)
   final-ia-audit:
     name: "5. Auditoría de IA y Decisiones"
-    # IMPORTANTE: Debe esperar a los 3 jobs que generan reportes
     needs: [sast-semgrep, dependency-scan, container-security] 
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout Código del Proyecto (Contexto)
+        uses: actions/checkout@v4
+        with:
+          path: project-source
+
       - name: Checkout Gobernanza (Scripts)
         uses: actions/checkout@v4
         with:
@@ -122,25 +130,31 @@ jobs:
 
       - name: Descargar Reportes (Artifacts)
         uses: actions/download-artifact@v4
+
       - name: Consolidar y Ejecutar IA
         shell: python
         run: |
           import os, shutil
-          # El mapeo que hiciste está perfecto para consolidar todo en la raíz
+          
+          # Mapeo de artefactos descargados a la raíz para que el script de IA los vea
           report_map = {
               'snyk-report/snyk-results.json': 'snyk-results.json',
               'trivy-report/trivy-results.json': 'trivy-results.json',
               'semgrep-report/semgrep-results.json': 'semgrep-results.json'
           }
           
-          print("--- Iniciando consolidación de reportes ---")
+          print("--- 📦 Consolidando reportes de seguridad ---")
           for src, dest in report_map.items():
               if os.path.exists(src):
-                  shutil.move(src, dest)
-                  print(f" Reporte {dest} movido exitosamente.")
+                  shutil.copy(src, dest)
+                  print(f"✅ Reporte {dest} listo.")
               else:
-                  # Si falta uno, la IA igual debe correr con lo que tenga
-                  print(f" Aviso: No se encontró el artefacto {src}")
+                  print(f"⚠️ Aviso: No se encontró {src}. La IA analizará con datos parciales.")
           
-          print("--- Ejecutando Triage de IA ---")
-          os.system('python governance-tools/scripts/ia-triage.py')
+          print("\n--- 🤖 Ejecutando Triage de IA ---")
+          # Ejecutamos el script de Python que tú creaste
+          result = os.system('python governance-tools/scripts/ia-triage.py')
+          
+          # Si el script de Python hace sys.exit(1), el pipeline fallará aquí.
+          if result != 0:
+              exit(1)
