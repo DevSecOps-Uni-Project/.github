@@ -1,0 +1,57 @@
+name: "DevSecOps Governance Pipeline"
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        type: string
+        default: '21'
+    secrets:
+      SNYK_TOKEN:
+        required: true
+
+jobs:
+  # Etapa 1: El Guardián de Secretos
+  secrets-scan:
+    name: "Escaneo de Secretos (TruffleHog)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 
+
+      - name: Ejecutar TruffleHog OSS
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
+
+  # Etapa 2: Análisis de Dependencias (SCA) + IA Triage
+  dependency-scan:
+    name: "SCA con Snyk e IA"
+    needs: secrets-scan # Solo corre si no hay secretos expuestos (buena práctica)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Run Snyk
+        uses: snyk/actions/maven@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --json-file-output=snyk-results.json
+        continue-on-error: true
+
+      - name: IA Triage Analysis
+        run: |
+          python scripts/ia-triage.py snyk-results.json
