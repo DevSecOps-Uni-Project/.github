@@ -11,12 +11,11 @@ on:
         required: true
 
 jobs:
-  # Etapa 1: El Guardián de Secretos
   secrets-scan:
     name: "Escaneo de Secretos (TruffleHog)"
     runs-on: ubuntu-latest
     steps:
-      - name: Clonar código
+      - name: Checkout Código
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 
@@ -29,14 +28,14 @@ jobs:
           head: HEAD
           extra_args: --only-verified
 
-  # Etapa 2: Análisis de Dependencias (SCA) + IA Triage
   dependency-scan:
     name: "SCA con Snyk e IA"
-    needs: secrets-scan # Solo corre si no hay secretos expuestos (buena práctica)
+    needs: secrets-scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      
+      - name: Checkout Código
+        uses: actions/checkout@v4
+
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
@@ -44,7 +43,7 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Run Snyk
+      - name: Run Snyk SCA
         uses: snyk/actions/maven@master
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -53,5 +52,30 @@ jobs:
         continue-on-error: true
 
       - name: IA Triage Analysis
+        shell: python
         run: |
-          python scripts/ia-triage.py snyk-results.json
+          import json
+          import os
+          
+          def triage():
+              file_path = 'snyk-results.json'
+              if not os.path.exists(file_path):
+                  print("❌ No se encontró el reporte de Snyk.")
+                  return
+              
+              with open(file_path, 'r') as f:
+                  data = json.load(f)
+              
+              vulnerabilities = data.get('vulnerabilities', [])
+              high_risks = [v for v in vulnerabilities if v['severity'] in ['critical', 'high']]
+              
+              print("--- IA TRIAGE REPORT (Awesome-DevSecOps Standard) ---")
+              if not high_risks:
+                  print("✅ Proyecto Seguro: Cumple con los estándares de la organización.")
+              else:
+                  print(f"⚠️ Se detectaron {len(high_risks)} vulnerabilidades de alto impacto.")
+                  for v in high_risks:
+                      print(f"- [{v['severity'].upper()}] {v['title']} en {v['packageName']}")
+                  print("\n💡 Sugerencia de IA: Actualice las versiones en el pom.xml según las recomendaciones de Snyk.")
+
+          triage()
