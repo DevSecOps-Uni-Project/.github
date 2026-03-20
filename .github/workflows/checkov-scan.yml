@@ -1,0 +1,21 @@
+name: "Motor: Seguridad de Infraestructura (Checkov)"
+
+on:
+  workflow_call:
+
+jobs:
+  checkov:
+    name: Checkov IaC Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      - name: Ejecutar Checkov
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: .
+          framework: all 
+          soft_fail: true # Reporta pero no bloquea el pipeline por ahora
+          output_format: cli
+          quiet: true
