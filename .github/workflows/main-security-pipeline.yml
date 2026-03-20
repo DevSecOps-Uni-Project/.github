@@ -14,7 +14,7 @@ on:
         required: true
 
 jobs:
-  # 1. ESCANEO DE SECRETOS (TruffleHog)
+  # 1. ESCANEO DE SECRETOS
   secrets-audit:
     name: "1. Guardián de Secretos"
     runs-on: ubuntu-latest
@@ -31,7 +31,7 @@ jobs:
           head: HEAD
           extra_args: --only-verified
 
-  # 2. SAST (SEMGREP) - Corregido --exclude
+  # 2. SAST (SEMGREP)
   sast-semgrep:
     name: "2. SAST (Semgrep)"
     needs: secrets-audit
@@ -40,55 +40,67 @@ jobs:
     steps:
       - name: Checkout Código
         uses: actions/checkout@v4
-
-      - name: Semgrep Scan (Java & Spring Focus)
+      - name: Semgrep Scan
         run: |
           docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan \
-            --config="p/default" \
-            --config="p/security-audit" \
-            --config="p/secrets" \
-            --exclude="mvnw*" \
-            --exclude=".mvn/" \
-            --json \
-            --output=semgrep-results.json || [ $? -eq 7 ]
-
-      - name: Upload Semgrep Report
+            --config="p/default" --config="p/security-audit" --config="p/secrets" \
+            --exclude="mvnw*" --exclude=".mvn/" --json --output=semgrep-results.json || [ $? -eq 7 ]
+      - name: Upload Report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: semgrep-report
           path: semgrep-results.json
 
-  # 3. SCA (SNYK) - Escaneo de Dependencias Maven
+  # 3. SCA (SNYK)
   dependency-scan:
     name: "3. SCA (Snyk)"
     needs: secrets-audit
     runs-on: ubuntu-latest
+    continue-on-error: true 
     steps:
       - name: Checkout Código
         uses: actions/checkout@v4 
-
       - name: Setup Java
         uses: actions/setup-java@v4 
         with:
           java-version: ${{ inputs.java-version }}
           distribution: 'temurin'
-
-      - name: Run Snyk SCA (Forzar Maven)
+      - name: Run Snyk
         run: |
           npm install -g snyk
           snyk auth ${{ secrets.SNYK_TOKEN }}
-          # Modificado: Forzamos --file=pom.xml para evitar que intente buscar node_modules
           snyk test --file=pom.xml --json > snyk-results.json || true
-        continue-on-error: true 
-
-      - name: Upload Snyk Report
+      - name: Upload Report
         uses: actions/upload-artifact@v4 
         with:
           name: snyk-report
           path: snyk-results.json
 
-  # 4. SEGURIDAD DE CONTENEDORES (TRIVY)
+  # 3.5 GENERACIÓN DE SBOM (CycloneDX)
+  sbom-generation:
+    name: "3.5 Inventario SBOM"
+    needs: secrets-audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Código
+        uses: actions/checkout@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: 'temurin'
+          cache: 'maven'
+      - name: Generar SBOM con Maven
+        run: |
+          mvn org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom -Dcyclonedx.skipAttach=true
+      - name: Upload SBOM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: project-sbom
+          path: target/bom.json
+
+  # 4. SEGURIDAD DE CONTENEDORES
   container-security:
     name: "4. Seguridad de Contenedores"
     needs: [sast-semgrep, dependency-scan]
@@ -105,7 +117,7 @@ jobs:
           format: 'json'
           output: 'trivy-results.json'
           severity: 'CRITICAL,HIGH'
-      - name: Upload Trivy Report
+      - name: Upload Report
         uses: actions/upload-artifact@v4
         with:
           name: trivy-report
@@ -114,21 +126,20 @@ jobs:
   # 5. AUDITORÍA FINAL DE IA (IA TRIAGE)
   final-ia-audit:
     name: "5. Auditoría de IA y Decisiones"
-    needs: [sast-semgrep, dependency-scan, container-security] 
+    # IMPORTANTE: Ahora también necesita 'sbom-generation'
+    needs: [sast-semgrep, dependency-scan, container-security, sbom-generation] 
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Código del Proyecto (Contexto)
+      - name: Checkout Código del Proyecto
         uses: actions/checkout@v4
         with:
           path: project-source
-
-      - name: Checkout Gobernanza (Scripts)
+      - name: Checkout Gobernanza
         uses: actions/checkout@v4
         with:
           repository: DevSecOps-Uni-Project/.github
           path: governance-tools
-
-      - name: Descargar Reportes (Artifacts)
+      - name: Descargar Reportes
         uses: actions/download-artifact@v4
 
       - name: Consolidar y Ejecutar IA
@@ -136,11 +147,11 @@ jobs:
         run: |
           import os, shutil
           
-          # Mapeo de artefactos descargados a la raíz para que el script de IA los vea
           report_map = {
               'snyk-report/snyk-results.json': 'snyk-results.json',
               'trivy-report/trivy-results.json': 'trivy-results.json',
-              'semgrep-report/semgrep-results.json': 'semgrep-results.json'
+              'semgrep-report/semgrep-results.json': 'semgrep-results.json',
+              'project-sbom/bom.json': 'project-sbom.json'  # <-- Mapeo del SBOM
           }
           
           print("--- 📦 Consolidando reportes de seguridad ---")
@@ -149,12 +160,9 @@ jobs:
                   shutil.copy(src, dest)
                   print(f"✅ Reporte {dest} listo.")
               else:
-                  print(f"⚠️ Aviso: No se encontró {src}. La IA analizará con datos parciales.")
+                  print(f"⚠️ Aviso: No se encontró {src}.")
           
           print("\n--- 🤖 Ejecutando Triage de IA ---")
-          # Ejecutamos el script de Python que tú creaste
           result = os.system('python governance-tools/scripts/ia-triage.py')
-          
-          # Si el script de Python hace sys.exit(1), el pipeline fallará aquí.
           if result != 0:
               exit(1)
