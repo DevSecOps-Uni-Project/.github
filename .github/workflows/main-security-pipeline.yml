@@ -90,6 +90,32 @@ jobs:
         with:
           name: trivy-report
           path: trivy-results.json
+  
+  sast-semgrep:
+    name: "2. SAST (Semgrep)"
+    needs: secrets-audit
+    runs-on: ubuntu-latest
+    container:
+      image: returntocorp/semgrep # Imagen oficial de Semgrep
+    steps:
+      - name: Checkout Código
+        uses: actions/checkout@v4
+
+      - name: Semgrep Scan (Java & Spring)
+        run: |
+          semgrep scan \
+            --config="p/java" \
+            --config="p/spring" \
+            --json \
+            --output=semgrep-results.json \
+            --error # Hace que el pipeline falle si encuentra hallazgos graves
+        
+      - name: Upload Semgrep Report
+        uses: actions/upload-artifact@v4
+        if: always() # Siempre sube el reporte, incluso si falla
+        with:
+          name: semgrep-report
+          path: semgrep-results.json
 
   # 4. AUDITORÍA FINAL DE IA (IA Triage)
   # Este job unifica los reportes y decide el éxito basado en Awesome-DevSecOps.

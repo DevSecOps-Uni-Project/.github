@@ -3,28 +3,47 @@ import os
 import sys
 
 def load_json(path):
+    """Carga un archivo JSON si existe, de lo contrario retorna None."""
     if os.path.exists(path):
-        with open(path, 'r') as f:
-            return json.load(f)
+        try:
+            with open(path, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"⚠️ Error leyendo {path}: {e}")
     return None
 
 def analyze_all():
-    print("🤖 --- IA SECURITY MULTI-LAYER REPORT --- 🤖")
-    print("Estándar de Referencia: Awesome-DevSecOps / Java 21 LTS\n")
+    print("\n" + "="*50)
+    print("🤖 IA SECURITY TRIAGE REPORT - PROYECTO IDS")
+    print("Estándar: Awesome-DevSecOps | Java 21 LTS")
+    print("="*50 + "\n")
     
     total_critical = 0
-    report_summary = []
+    summary = []
 
-    # 1. Análisis de Capa de Aplicación (Snyk)
+    # 1. ANÁLISIS SAST (Semgrep - Lógica de Código Java)
+    semgrep_data = load_json('semgrep-results.json')
+    if semgrep_data:
+        results = semgrep_data.get('results', [])
+        # Filtramos por severidad 'ERROR' (Crítico en Semgrep)
+        s_crit = [r for r in results if r['extra']['severity'] == 'ERROR']
+        total_critical += len(s_crit)
+        summary.append(f"🔍 SAST (Semgrep): {len(s_crit)} fallos de lógica/seguridad en código Java.")
+        for r in s_crit:
+            print(f"  [!] {r['path']}:{r['start']['line']} -> {r['extra']['message']}")
+
+    # 2. ANÁLISIS SCA (Snyk - Librerías y Dependencias)
     snyk_data = load_json('snyk-results.json')
     if snyk_data:
         vulns = snyk_data.get('vulnerabilities', [])
-        crit = [v for v in vulns if v['severity'] in ['critical', 'high']]
-        total_critical += len(crit)
-        report_summary.append(f"📦 SCA (Snyk): {len(crit)} riesgos detectados en librerías Java.")
+        # Snyk reporta criticidad como 'critical' o 'high'
+        sn_crit = [v for v in vulns if v['severity'] in ['critical', 'high']]
+        total_critical += len(sn_crit)
+        summary.append(f"📦 SCA (Snyk): {len(sn_crit)} vulnerabilidades en pom.xml.")
+        for v in sn_crit:
+            print(f"  [!] {v['severity'].upper()}: {v['title']} en {v['packageName']}")
 
-    # 2. Análisis de Capa de Infraestructura (Trivy)
-    # Trivy suele exportar un JSON con una estructura de 'Results'
+    # 3. ANÁLISIS CONTAINER (Trivy - Docker e Infra base)
     trivy_data = load_json('trivy-results.json')
     if trivy_data:
         results = trivy_data.get('Results', [])
@@ -32,25 +51,24 @@ def analyze_all():
         for res in results:
             t_crit += len([v for v in res.get('Vulnerabilities', []) if v['Severity'] in ['CRITICAL', 'HIGH']])
         total_critical += t_crit
-        report_summary.append(f"🐳 Container (Trivy): {t_crit} fallos en el SO/Dockerfile.")
+        summary.append(f"🐳 Container (Trivy): {t_crit} riesgos en la imagen Docker.")
 
-    # 3. Análisis de Capa Dinámica (OWASP ZAP)
-    # ZAP genera reportes en varios formatos; aquí asumimos un resumen simple
-    if os.path.exists('zap_out.conf'): # Config de salida de ZAP
-        report_summary.append("🌐 DAST (OWASP ZAP): Escaneo de línea base completado.")
+    # --- CONCLUSIÓN FINAL ---
+    print("\n" + "-"*30)
+    print("📊 RESUMEN EJECUTIVO:")
+    for item in summary:
+        print(f"  - {item}")
+    print("-"*30)
 
-    # LOGICA DE IA: Triage y Decisión
-    for line in report_summary:
-        print(line)
-
-    print("\n--- CONCLUSIÓN DE IA ---")
     if total_critical > 0:
-        print(f"❌ ESTADO: RECHAZADO. Se encontraron {total_critical} puntos de falla críticos.")
-        print("💡 ACCIÓN RECOMENDADA: Revise el historial de 'Awesome-Java-Security' para mitigar inyecciones.")
-        sys.exit(1) # Forzar fallo del pipeline
+        print(f"\n❌ DECISIÓN IA: RECHAZADO (Blocked)")
+        print(f"Motivo: Se detectaron {total_critical} hallazgos de alto riesgo que violan la gobernanza.")
+        print("💡 Sugerencia: Revise los 'Details' en GitHub Actions para aplicar los parches.")
+        sys.exit(1) # Finaliza el pipeline con error
     else:
-        print("✅ ESTADO: APROBADO. El proyecto cumple con la gobernanza de DevSecOps-Uni-Project.")
-        sys.exit(0)
+        print("\n✅ DECISIÓN IA: APROBADO (Passed)")
+        print("El código y las dependencias cumplen con los umbrales de seguridad establecidos.")
+        sys.exit(0) # Finaliza el pipeline con éxito
 
 if __name__ == "__main__":
     analyze_all()
