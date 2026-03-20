@@ -14,15 +14,19 @@ jobs:
       - name: Checkout del código
         uses: actions/checkout@v4
 
-      - name: Configurar Java (Necesario para Snyk en Java)
+      - name: Configurar Java 21
         uses: actions/setup-java@v4
         with:
           java-version: '21' 
           distribution: 'temurin'
+          cache: 'maven'
+        
+      - name: Instalar Snyk CLI
+        uses: snyk/actions/setup@master
 
-      - name: Ejecutar Snyk para buscar vulnerabilidades
-        uses: snyk/actions/maven@master # O 'gradle' si usan Gradle
+      - name: Ejecutar Escaneo de Maven
+        shell: bash
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: --severity-threshold=high # Solo falla si hay algo GRAVE
+        run: |
+          snyk test --maven-aggregate-policy --severity-threshold=high
