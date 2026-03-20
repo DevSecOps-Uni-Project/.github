@@ -43,10 +43,10 @@ jobs:
 
       - name: Semgrep Scan (Java & Spring Focus)
         run: |
-          # Cambiamos --ignore por --exclude
           docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan \
-            --config="p/java" \
-            --config="p/spring" \
+            --config="p/default" \
+            --config="p/security-audit" \
+            --config="p/secrets" \
             --exclude="mvnw*" \
             --exclude=".mvn/" \
             --json \
