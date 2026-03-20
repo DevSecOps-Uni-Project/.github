@@ -14,8 +14,7 @@ on:
         required: true
 
 jobs:
-  # 1. ESCANEO DE SECRETOS (TruffleHog)
-  # Detiene todo si hay llaves expuestas en el historial de Git.
+  # 1. ESCANEO DE SECRETOS
   secrets-audit:
     name: "1. Guardián de Secretos"
     runs-on: ubuntu-latest
@@ -24,7 +23,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 
-
       - name: TruffleHog OSS
         uses: trufflesecurity/trufflehog@main
         with:
@@ -33,23 +31,42 @@ jobs:
           head: HEAD
           extra_args: --only-verified
 
-  # 2. ANÁLISIS DE DEPENDENCIAS (Snyk SCA)
-  # Escanea el pom.xml o build.gradle en busca de librerías vulnerables.
-  dependency-scan:
-    name: "2. SCA (Snyk)"
+  # 2. SAST (SEMGREP) - Análisis de Lógica Java
+  sast-semgrep:
+    name: "2. SAST (Semgrep)"
     needs: secrets-audit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Código
         uses: actions/checkout@v4
+      - name: Semgrep Scan (Docker version para evitar fallos de permisos)
+        run: |
+          docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan \
+            --config="p/java" \
+            --config="p/spring" \
+            --json \
+            --output=semgrep-results.json
+      - name: Upload Semgrep Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: semgrep-report
+          path: semgrep-results.json
 
+  # 3. SCA (SNYK) - Análisis de pom.xml
+  dependency-scan:
+    name: "3. SCA (Snyk)"
+    needs: secrets-audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Código
+        uses: actions/checkout@v4
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           java-version: ${{ inputs.java-version }}
           distribution: 'temurin'
           cache: 'maven'
-
       - name: Run Snyk SCA
         uses: snyk/actions/maven@master
         env:
@@ -57,26 +74,22 @@ jobs:
         with:
           args: --json-file-output=snyk-results.json
         continue-on-error: true
-
       - name: Upload Snyk Report
         uses: actions/upload-artifact@v4
         with:
           name: snyk-report
           path: snyk-results.json
 
-  # 3. ESCANEO DE CONTENEDORES (Trivy)
-  # Revisa el Dockerfile y las vulnerabilidades del Sistema Operativo de la imagen.
+  # 4. SEGURIDAD DE CONTENEDORES (TRIVY)
   container-security:
-    name: "3. Seguridad de Contenedores"
-    needs: dependency-scan
+    name: "4. Seguridad de Contenedores"
+    needs: [sast-semgrep, dependency-scan]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Código
         uses: actions/checkout@v4
-
       - name: Build Local Image
         run: docker build -t ${{ inputs.image-name }}:test .
-
       - name: Trivy Scan
         uses: aquasecurity/trivy-action@master
         with:
@@ -84,44 +97,16 @@ jobs:
           format: 'json'
           output: 'trivy-results.json'
           severity: 'CRITICAL,HIGH'
-
       - name: Upload Trivy Report
         uses: actions/upload-artifact@v4
         with:
           name: trivy-report
           path: trivy-results.json
-  
-  sast-semgrep:
-    name: "2. SAST (Semgrep)"
-    needs: secrets-audit
-    runs-on: ubuntu-latest
-    container:
-      image: returntocorp/semgrep # Imagen oficial de Semgrep
-    steps:
-      - name: Checkout Código
-        uses: actions/checkout@v4
 
-      - name: Semgrep Scan (Java & Spring)
-        run: |
-          semgrep scan \
-            --config="p/java" \
-            --config="p/spring" \
-            --json \
-            --output=semgrep-results.json \
-            --error # Hace que el pipeline falle si encuentra hallazgos graves
-        
-      - name: Upload Semgrep Report
-        uses: actions/upload-artifact@v4
-        if: always() # Siempre sube el reporte, incluso si falla
-        with:
-          name: semgrep-report
-          path: semgrep-results.json
-
-  # 4. AUDITORÍA FINAL DE IA (IA Triage)
-  # Este job unifica los reportes y decide el éxito basado en Awesome-DevSecOps.
+  # 5. AUDITORÍA FINAL DE IA (IA TRIAGE)
   final-ia-audit:
-    name: "4. Auditoría de IA y Decisiones"
-    needs: [dependency-scan, container-security]
+    name: "5. Auditoría de IA y Decisiones"
+    needs: [container-security]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Gobernanza (Scripts)
@@ -129,18 +114,23 @@ jobs:
         with:
           repository: DevSecOps-Uni-Project/.github
           path: governance-tools
-
-      - name: Download All Reports
+      - name: Descargar Reportes (Artifacts)
         uses: actions/download-artifact@v4
-
-      - name: Run IA Triage Unified
+      - name: Consolidar y Ejecutar IA
         shell: python
         run: |
-          # Movemos los archivos al nivel raíz para el script
           import os, shutil
-          paths = ['snyk-report/snyk-results.json', 'trivy-report/trivy-results.json']
-          for p in paths:
-              if os.path.exists(p): shutil.move(p, os.path.basename(p))
+          # Rutas de los reportes descargados por GitHub Actions
+          report_map = {
+              'snyk-report/snyk-results.json': 'snyk-results.json',
+              'trivy-report/trivy-results.json': 'trivy-results.json',
+              'semgrep-report/semgrep-results.json': 'semgrep-results.json'
+          }
+          for src, dest in report_map.items():
+              if os.path.exists(src):
+                  shutil.move(src, dest)
+                  print(f"✅ Reporte {dest} listo.")
+              else:
+                  print(f"⚠️ No se encontró {src}")
           
-          # Ejecutamos el script de inteligencia
           os.system('python governance-tools/scripts/ia-triage.py')
