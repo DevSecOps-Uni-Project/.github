@@ -2,15 +2,17 @@ import json
 import os
 import sys
 
-def load_json(path):
-    """Carga un archivo JSON si existe, de lo contrario retorna None."""
-    if os.path.exists(path):
-        try:
-            with open(path, 'r') as f:
-                return json.load(f)
-        except Exception as e:
-            print(f"⚠️ Error leyendo {path}: {e}")
-    return None
+def load_json_safely(file_path):
+    try:
+        with open(file_path, 'r') as f:
+            content = f.read().strip()
+            # Si Snyk manda múltiples JSON, intentamos capturar solo el primero
+            if content.startswith('['):
+                return json.loads(content)[0]
+            return json.loads(content)
+    except Exception as e:
+        print(f"⚠️ Error procesando {file_path}: {e}")
+        return None
 
 def analyze_all():
     print("\n" + "="*50)

@@ -31,7 +31,7 @@ jobs:
           head: HEAD
           extra_args: --only-verified
 
-  # 2. SAST (SEMGREP) - Análisis de Lógica Java
+  # 2. SAST (SEMGREP) - Corregido --exclude
   sast-semgrep:
     name: "2. SAST (Semgrep)"
     needs: secrets-audit
@@ -43,12 +43,12 @@ jobs:
 
       - name: Semgrep Scan (Java & Spring Focus)
         run: |
-          # Modificado: Ignoramos mvnw para evitar el Syntax Error y enfocamos en Java/Spring
+          # Cambiamos --ignore por --exclude
           docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan \
             --config="p/java" \
             --config="p/spring" \
-            --ignore "mvnw*" \
-            --ignore ".mvn/" \
+            --exclude="mvnw*" \
+            --exclude=".mvn/" \
             --json \
             --output=semgrep-results.json
 
