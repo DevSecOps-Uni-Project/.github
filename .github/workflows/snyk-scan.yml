@@ -29,4 +29,4 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
-          snyk test --maven-aggregate-policy --severity-threshold=high
+          snyk test --file=pom.xml --severity-threshold=high
