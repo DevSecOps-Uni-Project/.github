@@ -108,9 +108,9 @@ jobs:
           name: project-sbom
           path: target/bom.json
 
-  # 4. SEGURIDAD DE CONTENEDORES
-  container-security:
-    name: "4. Seguridad de Contenedores"
+  # 4. SEGURIDAD DE INFRAESTRUCTURA (CONTENEDORES + DAST)
+  container-and-dast-security:
+    name: "4. Contenedores y DAST"
     needs: [sast-semgrep, dependency-scan]
     runs-on: ubuntu-latest
     permissions:
@@ -122,7 +122,7 @@ jobs:
       - name: Build Local Image
         run: docker build -t ${{ inputs.image-name }}:test .
 
-      - name: Trivy Scan (Fuerza SARIF vía Docker)
+      - name: Trivy Scan (Análisis de Imagen)
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
@@ -133,6 +133,18 @@ jobs:
             --severity CRITICAL,HIGH \
             ${{ inputs.image-name }}:test
 
+      - name: Levantar Aplicación para DAST
+        run: |
+          docker run -d --name app-ids -p 8080:8080 ${{ inputs.image-name }}:test
+          echo "Esperando a que el servicio Spring Boot inicie..."
+          sleep 30 # Tiempo de espera para el arranque de la app
+
+      - name: ZAP Scan (Análisis Dinámico)
+        uses: zaproxy/action-api-scan@v0.6.0
+        with:
+          target: 'http://localhost:8080'
+          format: openapi
+
       - name: Upload Trivy Results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         if: always()
@@ -140,30 +152,16 @@ jobs:
           sarif_file: 'trivy-results.sarif'
           category: 'trivy-container'
 
-      - name: Upload Report for IA
+      - name: Upload Trivy Report for Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: trivy-report
           path: trivy-results.sarif
-# 4.5 ANÁLISIS DINÁMICO (DAST)
-  dast-scan:
-    name: "4.5 Análisis Dinámico (ZAP)"
-    needs: container-security
-    runs-on: ubuntu-latest
-    steps:
-      - name: Levantar Aplicación
-        run: docker run -d -p 8080:8080 ${{ inputs.image-name }}:test
-        
-      - name: ZAP Scan
-        uses: zaproxy/action-api-scan@v0.6.0
-        with:
-          target: 'http://localhost:8080'
-          format: openapi
+
   # 5. AUDITORÍA FINAL DE IA (IA TRIAGE)
   final-ia-audit:
     name: "5. Auditoría de IA y Decisiones"
-    # IMPORTANTE: Ahora también necesita 'sbom-generation'
-    needs: [sast-semgrep, dependency-scan, container-security, sbom-generation] 
+    needs: [sast-semgrep, dependency-scan, container-and-dast-security, sbom-generation] 
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Código del Proyecto
@@ -187,7 +185,7 @@ jobs:
               'snyk-report/snyk-results.json': 'snyk-results.json',
               'trivy-report/trivy-results.sarif': 'trivy-results.sarif', 
               'semgrep-report/semgrep-results.sarif': 'semgrep-results.sarif', 
-              'project-sbom/bom.json': 'project-sbom.json'  # <-- Mapeo del SBOM
+              'project-sbom/bom.json': 'project-sbom.json'
           }
           
           print("--- 📦 Consolidando reportes de seguridad ---")
