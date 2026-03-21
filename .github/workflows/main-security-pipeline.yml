@@ -166,17 +166,6 @@ jobs:
         with:
           name: trivy-report
           path: trivy-results.sarif
-
-  Tu archivo YAML ya está estructuralmente completo para integrar todas las herramientas. El único detalle "invisible" que podría hacer que falle es el nombre del archivo que genera la acción de ZAP.
-
-Aunque en la documentación dice zap_report.html, la acción action-baseline a veces genera un archivo llamado simplemente report.html dentro del contenedor.
-
-Aquí tienes la versión final ultra-robusta. He ajustado el script de consolidación para que busque cualquier archivo HTML dentro de la carpeta zap-report, así no dependemos de si ZAP decide llamarlo zap_report.html o report.html.
-
-Workflow DevSecOps (Versión Final Robusta)
-YAML
-# ... (Partes anteriores iguales hasta el Job 5)
-
   # 5. AUDITORÍA FINAL DE IA (IA TRIAGE)
   final-ia-audit:
     name: "5. Auditoría de IA y Decisiones"
