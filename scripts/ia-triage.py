@@ -37,18 +37,33 @@ def load_json_safely(file_path):
         print(f"⚠️ Error procesando {file_path}: {e}")
         return None
 
+def _extract_zap_summary_count(html, label):
+    """Extrae el conteo numérico de la tabla Summary of Alerts (High/Medium)."""
+    patterns = [
+        rf'<td[^>]*>\s*{label}\s*: ?\s*</td>\s*<td[^>]*>\s*(\d+)\s*</td>',
+        rf'<th[^>]*>\s*{label}\s*: ?\s*</th>\s*<td[^>]*>\s*(\d+)\s*</td>'
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, html, flags=re.IGNORECASE | re.DOTALL)
+        if match:
+            return int(match.group(1))
+    return 0
+
 def analyze_zap_html(file_path):
-    """Analiza el reporte HTML de ZAP buscando patrones de riesgo."""
+    """Analiza el reporte HTML de ZAP usando la tabla de Summary of Alerts."""
     if not os.path.exists(file_path):
         return 0, []
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             html = f.read()
-            high = len(re.findall(r'class="risk-3"', html))
-            med = len(re.findall(r'class="risk-2"', html))
+            high = _extract_zap_summary_count(html, 'High')
+            med = _extract_zap_summary_count(html, 'Medium')
+
             alerts = []
-            if high > 0: alerts.append(f"🔥 DAST (ZAP): {high} alertas de RIESGO ALTO.")
-            if med > 0: alerts.append(f"⚠️ DAST (ZAP): {med} alertas de RIESGO MEDIO.")
+            if high > 0:
+                alerts.append(f"🔥 DAST (ZAP): {high} alertas de RIESGO ALTO.")
+            if med > 0:
+                alerts.append(f"⚠️ DAST (ZAP): {med} alertas de RIESGO MEDIO.")
             return (high + med), alerts
     except Exception:
         return 0, []
