@@ -121,6 +121,9 @@ jobs:
         run: |
           docker run -d --name app-ids -p 8080:8080 ${{ inputs.image-name }}:test
           sleep 40 
+      - name: Ajustar permisos para ZAP
+        run: |
+          sudo chmod -R a+rwX "$GITHUB_WORKSPACE"
       - name: ZAP Scan
         uses: zaproxy/action-baseline@v0.12.0
         with:
@@ -133,7 +136,10 @@ jobs:
         if: always()
         with:
           name: zap-report
-          path: zap_report.html
+          path: |
+            zap_report.html
+            report_html.html
+          if-no-files-found: warn
       - name: Upload Trivy Report
         uses: actions/upload-artifact@v4
         with:
