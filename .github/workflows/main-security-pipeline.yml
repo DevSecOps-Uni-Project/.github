@@ -47,12 +47,6 @@ jobs:
           docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan \
             --config="p/default" --config="p/security-audit" --config="p/secrets" \
             --exclude="mvnw*" --exclude=".mvn/" --sarif --output=semgrep-results.sarif || [ $? -eq 7 ]
-      - name: Upload Semgrep to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'semgrep-results.sarif'
-          category: 'semgrep-sast'
       - name: Upload Semgrep Report
         uses: actions/upload-artifact@v4
         if: always()
@@ -60,7 +54,7 @@ jobs:
           name: semgrep-report
           path: semgrep-results.sarif
 
-  # 3. SCA (SNYK)
+  # 3. SCA (SNYK) - AQUÍ ESTÁN LOS 9 RIESGOS (2C/7H)
   dependency-scan:
     name: "3. SCA (Snyk)"
     needs: secrets-audit
@@ -78,14 +72,16 @@ jobs:
         run: |
           npm install -g snyk
           snyk auth ${{ secrets.SNYK_TOKEN }}
+          # Generamos el JSON. El '|| true' permite que el pipeline siga para que la IA analice los fallos
           snyk test --file=pom.xml --json > snyk-results.json || true
-      - name: Upload Report
+      - name: Upload Snyk Report
         uses: actions/upload-artifact@v4 
+        if: always()
         with:
           name: snyk-report
           path: snyk-results.json
 
-  # 3.5 GENERACIÓN DE SBOM (CycloneDX)
+  # 3.5 GENERACIÓN DE SBOM
   sbom-generation:
     name: "3.5 Inventario SBOM"
     needs: secrets-audit
@@ -98,10 +94,8 @@ jobs:
         with:
           java-version: ${{ inputs.java-version }}
           distribution: 'temurin'
-          cache: 'maven'
-      - name: Generar SBOM con Maven
-        run: |
-          mvn org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom -Dcyclonedx.skipAttach=true
+      - name: Generar SBOM
+        run: mvn org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom -Dcyclonedx.skipAttach=true
       - name: Upload SBOM Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -113,118 +107,98 @@ jobs:
     name: "4. Contenedores y DAST"
     needs: [sast-semgrep, dependency-scan]
     runs-on: ubuntu-latest
-    permissions:
-      security-events: write
     steps:
       - name: Checkout Código
         uses: actions/checkout@v4
-
       - name: Build Local Image
         run: docker build -t ${{ inputs.image-name }}:test .
-
-      - name: Trivy Scan (Análisis de Imagen)
+      - name: Trivy Scan
         run: |
-          docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v $(pwd):/src \
-            aquasec/trivy:0.49.1 image \
-            --format sarif \
-            --output /src/trivy-results.sarif \
-            --severity CRITICAL,HIGH \
-            ${{ inputs.image-name }}:test
-
-      - name: Levantar Aplicación para DAST
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $(pwd):/src \
+            aquasec/trivy:0.49.1 image --format sarif --output /src/trivy-results.sarif \
+            --severity CRITICAL,HIGH ${{ inputs.image-name }}:test
+      - name: Levantar Aplicación
         run: |
-          docker run -d --name app-ids --network host ${{ inputs.image-name }}:test
-          echo "Esperando 40 segundos a que Spring Boot levante..."
+          docker run -d --name app-ids -p 8080:8080 ${{ inputs.image-name }}:test
           sleep 40 
-
-      - name: ZAP Scan (Análisis Dinámico)
+      - name: ZAP Scan
         uses: zaproxy/action-baseline@v0.12.0
         with:
           target: 'http://localhost:8080'
           token: ${{ secrets.GITHUB_TOKEN }}
           fail_action: false
           cmd_options: '-r zap_report.html'
-
-      # --- PASO CRÍTICO AGREGADO ---
       - name: Upload ZAP Report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: zap-report
-          path: zap_report.html # El nombre por defecto que genera la acción baseline es este
-
-      - name: Upload Trivy Results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'trivy-results.sarif'
-          category: 'trivy-container'
-
-      - name: Upload Trivy Report for Artifacts
+          path: zap_report.html
+      - name: Upload Trivy Report
         uses: actions/upload-artifact@v4
         with:
           name: trivy-report
           path: trivy-results.sarif
-  # 5. AUDITORÍA FINAL DE IA (IA TRIAGE)
+
+  # 5. AUDITORÍA FINAL DE IA
   final-ia-audit:
     name: "5. Auditoría de IA y Decisiones"
     needs: [sast-semgrep, dependency-scan, container-and-dast-security, sbom-generation] 
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Código del Proyecto
-        uses: actions/checkout@v4
-        with:
-          path: project-source
-
       - name: Checkout Gobernanza
         uses: actions/checkout@v4
         with:
           repository: DevSecOps-Uni-Project/.github
           path: governance-tools
       
-      - name: Descargar Reportes
+      - name: Descargar TODOS los Reportes
         uses: actions/download-artifact@v4
+        with:
+          path: all-reports # Descarga cada artifact en su propia subcarpeta
 
       - name: Consolidar y Ejecutar IA
         shell: python
         run: |
           import os, shutil, glob
           
-          # Mapeo de reportes estándar
+          # Mapeo corregido basándose en la estructura de 'download-artifact@v4'
+          # Formato: 'all-reports/NOMBRE_DEL_ARTIFACT/ARCHIVO'
           report_map = {
-              'snyk-report/snyk-results.json': 'snyk-results.json',
-              'trivy-report/trivy-results.sarif': 'trivy-results.sarif', 
-              'semgrep-report/semgrep-results.sarif': 'semgrep-results.sarif', 
-              'project-sbom/bom.json': 'project-sbom.json'
+              'all-reports/snyk-report/snyk-results.json': 'snyk-results.json',
+              'all-reports/trivy-report/trivy-results.sarif': 'trivy-results.sarif', 
+              'all-reports/semgrep-report/semgrep-results.sarif': 'semgrep-results.sarif', 
+              'all-reports/project-sbom/bom.json': 'project-sbom.json'
           }
           
           print("--- 📦 Consolidando reportes de seguridad ---")
-          
-          # 1. Consolidar reportes JSON/SARIF
           for src, dest in report_map.items():
               if os.path.exists(src):
                   shutil.copy(src, dest)
-                  print(f"✅ {dest} listo.")
+                  print(f"✅ {dest} cargado correctamente.")
               else:
-                  print(f"⚠️ Aviso: No se encontró {src}.")
+                  # Búsqueda de rescate si el path varía
+                  found = glob.glob(f"**/{os.path.basename(src)}", recursive=True)
+                  if found:
+                      shutil.copy(found[0], dest)
+                      print(f"✅ {dest} encontrado mediante búsqueda recursiva.")
+                  else:
+                      print(f"❌ Error: No se pudo localizar {src}")
 
-          # 2. Lógica de búsqueda avanzada para ZAP
-          # Busca en cualquier subcarpeta cualquier archivo HTML que mencione 'zap'
-          zap_search = glob.glob("**/zap*.html", recursive=True) + glob.glob("zap-report/*.html")
-          
-          if zap_search:
-              shutil.copy(zap_search[0], 'zap-results.html')
-              print(f"✅ zap-results.html listo (desde {zap_search[0]}).")
+          # Lógica específica para ZAP HTML
+          zap_files = glob.glob("**/zap*.html", recursive=True)
+          if zap_files:
+              shutil.copy(zap_files[0], 'zap-results.html')
+              print(f"✅ zap-results.html listo para triage.")
           else:
-              # Crear un archivo placeholder para que el script de triage no de error de lectura
               with open('zap-results.html', 'w') as f:
-                  f.write("<html><body>No se encontró reporte de ZAP.</body></html>")
-              print("⚠️ Aviso: No se encontró el reporte HTML de ZAP. Se creó un archivo vacío.")
-          
-          print("\n--- 🤖 Ejecutando Triage de IA ---")
-          # Ejecución del script centralizado
-          result = os.system('python governance-tools/scripts/ia-triage.py')
-          if result != 0:
+                  f.write("<html><body>No ZAP data</body></html>")
+              print("⚠️ Aviso: Reporte ZAP no encontrado.")
+
+          print("\n--- 🤖 Iniciando Triage de IA ---")
+          # Ejecución del script en tu repo de gobernanza
+          exit_code = os.system('python governance-tools/scripts/ia-triage.py')
+          if exit_code != 0:
+              print("\n⛔ GOBERNANZA: El proyecto no cumple los estándares de seguridad.")
               exit(1)
+          print("\n🟢 GOBERNANZA: Proyecto aprobado.")
