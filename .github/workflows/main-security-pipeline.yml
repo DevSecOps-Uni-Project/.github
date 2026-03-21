@@ -117,7 +117,7 @@ jobs:
         run: docker build -t ${{ inputs.image-name }}:test .
 
       - name: Trivy Scan (Fuerza SARIF)
-        uses: aquasecurity/trivy-action@0.28.0 # Usa una versión específica estable
+        uses: aquasecurity/trivy-action@v0.28.0 # Usa una versión específica estable
         with:
           image-ref: '${{ inputs.image-name }}:test'
           format: 'sarif'
