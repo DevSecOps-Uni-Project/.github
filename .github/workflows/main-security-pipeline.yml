@@ -135,9 +135,8 @@ jobs:
 
       - name: Levantar Aplicación para DAST
         run: |
-          # Usamos --network host para que el puerto 8080 esté disponible directamente en el host
           docker run -d --name app-ids --network host ${{ inputs.image-name }}:test
-          echo "Esperando 40 segundos a que Spring Boot levante (Java 21)..."
+          echo "Esperando 40 segundos a que Spring Boot levante..."
           sleep 40 
 
       - name: ZAP Scan (Análisis Dinámico)
@@ -146,6 +145,14 @@ jobs:
           target: 'http://localhost:8080'
           token: ${{ secrets.GITHUB_TOKEN }}
           fail_action: false
+
+      # --- PASO CRÍTICO AGREGADO ---
+      - name: Upload ZAP Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-report
+          path: zap_report.html # El nombre por defecto que genera la acción baseline es este
 
       - name: Upload Trivy Results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
@@ -187,7 +194,8 @@ jobs:
               'snyk-report/snyk-results.json': 'snyk-results.json',
               'trivy-report/trivy-results.sarif': 'trivy-results.sarif', 
               'semgrep-report/semgrep-results.sarif': 'semgrep-results.sarif', 
-              'project-sbom/bom.json': 'project-sbom.json'
+              'project-sbom/bom.json': 'project-sbom.json', 
+              'zap-report/zap_report.html': 'zap-results.html' 
           }
           
           print("--- 📦 Consolidando reportes de seguridad ---")
