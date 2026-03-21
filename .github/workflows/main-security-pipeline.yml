@@ -167,6 +167,16 @@ jobs:
           name: trivy-report
           path: trivy-results.sarif
 
+  Tu archivo YAML ya está estructuralmente completo para integrar todas las herramientas. El único detalle "invisible" que podría hacer que falle es el nombre del archivo que genera la acción de ZAP.
+
+Aunque en la documentación dice zap_report.html, la acción action-baseline a veces genera un archivo llamado simplemente report.html dentro del contenedor.
+
+Aquí tienes la versión final ultra-robusta. He ajustado el script de consolidación para que busque cualquier archivo HTML dentro de la carpeta zap-report, así no dependemos de si ZAP decide llamarlo zap_report.html o report.html.
+
+Workflow DevSecOps (Versión Final Robusta)
+YAML
+# ... (Partes anteriores iguales hasta el Job 5)
+
   # 5. AUDITORÍA FINAL DE IA (IA TRIAGE)
   final-ia-audit:
     name: "5. Auditoría de IA y Decisiones"
@@ -182,29 +192,40 @@ jobs:
         with:
           repository: DevSecOps-Uni-Project/.github
           path: governance-tools
+      
       - name: Descargar Reportes
         uses: actions/download-artifact@v4
 
       - name: Consolidar y Ejecutar IA
         shell: python
         run: |
-          import os, shutil
+          import os, shutil, glob
           
+          # Mapeo base
           report_map = {
               'snyk-report/snyk-results.json': 'snyk-results.json',
               'trivy-report/trivy-results.sarif': 'trivy-results.sarif', 
               'semgrep-report/semgrep-results.sarif': 'semgrep-results.sarif', 
-              'project-sbom/bom.json': 'project-sbom.json', 
-              'zap-report/zap_report.html': 'zap-results.html' 
+              'project-sbom/bom.json': 'project-sbom.json'
           }
           
           print("--- 📦 Consolidando reportes de seguridad ---")
+          
+          # 1. Consolidar reportes estándar
           for src, dest in report_map.items():
               if os.path.exists(src):
                   shutil.copy(src, dest)
-                  print(f"✅ Reporte {dest} listo.")
+                  print(f"✅ {dest} listo.")
               else:
                   print(f"⚠️ Aviso: No se encontró {src}.")
+
+          # 2. Lógica especial para ZAP (Busca cualquier HTML en zap-report)
+          zap_files = glob.glob("zap-report/*.html")
+          if zap_files:
+              shutil.copy(zap_files[0], 'zap-results.html')
+              print(f"✅ zap-results.html listo (desde {zap_files[0]}).")
+          else:
+              print("⚠️ Aviso: No se encontró el reporte HTML de ZAP.")
           
           print("\n--- 🤖 Ejecutando Triage de IA ---")
           result = os.system('python governance-tools/scripts/ia-triage.py')
