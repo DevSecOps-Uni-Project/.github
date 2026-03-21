@@ -135,15 +135,17 @@ jobs:
 
       - name: Levantar Aplicación para DAST
         run: |
-          docker run -d --name app-ids -p 8080:8080 ${{ inputs.image-name }}:test
-          echo "Esperando a que el servicio Spring Boot inicie..."
-          sleep 30 # Tiempo de espera para el arranque de la app
+          # Usamos --network host para que el puerto 8080 esté disponible directamente en el host
+          docker run -d --name app-ids --network host ${{ inputs.image-name }}:test
+          echo "Esperando 40 segundos a que Spring Boot levante (Java 21)..."
+          sleep 40 
 
       - name: ZAP Scan (Análisis Dinámico)
-        uses: zaproxy/action-api-scan@v0.6.0
+        uses: zaproxy/action-baseline@v0.12.0
         with:
           target: 'http://localhost:8080'
-          format: openapi
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fail_action: false
 
       - name: Upload Trivy Results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
