@@ -9,6 +9,9 @@ on:
       image-name:
         type: string
         default: 'backend-ids'
+      app-port:
+        type: string
+        default: '8080'
     secrets:
       SNYK_TOKEN:
         required: true
@@ -119,15 +122,31 @@ jobs:
             --severity CRITICAL,HIGH ${{ inputs.image-name }}:test
       - name: Levantar Aplicación
         run: |
-          docker run -d --name app-ids -p 8080:8080 ${{ inputs.image-name }}:test
-          sleep 40 
+          docker run -d --name app-ids -p ${{ inputs.app-port }}:${{ inputs.app-port }} ${{ inputs.image-name }}:test
+      - name: Esperar disponibilidad de la app
+        run: |
+          set -e
+          APP_URL="http://localhost:${{ inputs.app-port }}"
+          echo "Esperando que la app responda en ${APP_URL} ..."
+          for i in {1..24}; do
+            if curl -fsS "${APP_URL}" >/dev/null 2>&1 || curl -fsS "${APP_URL}/actuator/health" >/dev/null 2>&1; then
+              echo "✅ App disponible para ZAP en ${APP_URL}."
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "❌ La app no estuvo disponible para ZAP tras 120s."
+          docker ps -a
+          docker logs app-ids || true
+          exit 1
       - name: Ajustar permisos para ZAP
         run: |
           sudo chmod -R a+rwX "$GITHUB_WORKSPACE"
       - name: ZAP Scan
         uses: zaproxy/action-baseline@v0.12.0
         with:
-          target: 'http://localhost:8080'
+          target: 'http://localhost:${{ inputs.app-port }}'
           token: ${{ secrets.GITHUB_TOKEN }}
           fail_action: false
           cmd_options: '-r zap_report.html'
