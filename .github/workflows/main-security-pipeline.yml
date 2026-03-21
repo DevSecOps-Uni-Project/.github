@@ -145,6 +145,7 @@ jobs:
           target: 'http://localhost:8080'
           token: ${{ secrets.GITHUB_TOKEN }}
           fail_action: false
+          cmd_options: '-r zap_report.html'
 
       # --- PASO CRÍTICO AGREGADO ---
       - name: Upload ZAP Report
@@ -176,6 +177,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: project-source
+
       - name: Checkout Gobernanza
         uses: actions/checkout@v4
         with:
@@ -190,7 +192,7 @@ jobs:
         run: |
           import os, shutil, glob
           
-          # Mapeo base
+          # Mapeo de reportes estándar
           report_map = {
               'snyk-report/snyk-results.json': 'snyk-results.json',
               'trivy-report/trivy-results.sarif': 'trivy-results.sarif', 
@@ -200,7 +202,7 @@ jobs:
           
           print("--- 📦 Consolidando reportes de seguridad ---")
           
-          # 1. Consolidar reportes estándar
+          # 1. Consolidar reportes JSON/SARIF
           for src, dest in report_map.items():
               if os.path.exists(src):
                   shutil.copy(src, dest)
@@ -208,15 +210,21 @@ jobs:
               else:
                   print(f"⚠️ Aviso: No se encontró {src}.")
 
-          # 2. Lógica especial para ZAP (Busca cualquier HTML en zap-report)
-          zap_files = glob.glob("zap-report/*.html")
-          if zap_files:
-              shutil.copy(zap_files[0], 'zap-results.html')
-              print(f"✅ zap-results.html listo (desde {zap_files[0]}).")
+          # 2. Lógica de búsqueda avanzada para ZAP
+          # Busca en cualquier subcarpeta cualquier archivo HTML que mencione 'zap'
+          zap_search = glob.glob("**/zap*.html", recursive=True) + glob.glob("zap-report/*.html")
+          
+          if zap_search:
+              shutil.copy(zap_search[0], 'zap-results.html')
+              print(f"✅ zap-results.html listo (desde {zap_search[0]}).")
           else:
-              print("⚠️ Aviso: No se encontró el reporte HTML de ZAP.")
+              # Crear un archivo placeholder para que el script de triage no de error de lectura
+              with open('zap-results.html', 'w') as f:
+                  f.write("<html><body>No se encontró reporte de ZAP.</body></html>")
+              print("⚠️ Aviso: No se encontró el reporte HTML de ZAP. Se creó un archivo vacío.")
           
           print("\n--- 🤖 Ejecutando Triage de IA ---")
+          # Ejecución del script centralizado
           result = os.system('python governance-tools/scripts/ia-triage.py')
           if result != 0:
               exit(1)
