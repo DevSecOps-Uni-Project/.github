@@ -154,6 +154,7 @@ jobs:
             -e AZURE_OPENAI_API_VERSION=2024-02-15-preview \
             -e GOOGLE_CLIENT_ID=dast-placeholder-client-id \
             -e GOOGLE_CLIENT_SECRET=dast-placeholder-client-secret \
+            -e ML_ENDPOINT=https://example.com/predict \
             ${{ inputs.image-name }}:test
       - name: Esperar disponibilidad de la app
         run: |
