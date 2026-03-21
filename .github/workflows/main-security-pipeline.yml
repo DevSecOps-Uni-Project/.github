@@ -14,7 +14,7 @@ on:
         default: '8080'
     secrets:
       SNYK_TOKEN:
-        required: true
+        required: false
   workflow_dispatch:
     inputs:
       java-version:
