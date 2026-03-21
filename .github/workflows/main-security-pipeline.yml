@@ -120,9 +120,34 @@ jobs:
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $(pwd):/src \
             aquasec/trivy:0.49.1 image --format sarif --output /src/trivy-results.sarif \
             --severity CRITICAL,HIGH ${{ inputs.image-name }}:test
+      - name: Levantar PostgreSQL efímero para DAST
+        run: |
+          set -e
+          docker network create ids-net
+          docker run -d --name pg-ids --network ids-net \
+            -e POSTGRES_DB=idsdb \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            postgres:16
+
+          for i in {1..24}; do
+            if docker exec pg-ids pg_isready -U postgres -d idsdb >/dev/null 2>&1; then
+              echo "✅ PostgreSQL disponible para la app."
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "❌ PostgreSQL no estuvo listo tras 120s."
+          docker logs pg-ids || true
+          exit 1
       - name: Levantar Aplicación
         run: |
-          docker run -d --name app-ids -p ${{ inputs.app-port }}:${{ inputs.app-port }} ${{ inputs.image-name }}:test
+          docker run -d --name app-ids --network ids-net -p ${{ inputs.app-port }}:${{ inputs.app-port }} \
+            -e SPRING_DATASOURCE_URL=jdbc:postgresql://pg-ids:5432/idsdb \
+            -e SPRING_DATASOURCE_USERNAME=postgres \
+            -e SPRING_DATASOURCE_PASSWORD=postgres \
+            ${{ inputs.image-name }}:test
       - name: Esperar disponibilidad de la app
         run: |
           set -e
@@ -139,6 +164,7 @@ jobs:
           echo "❌ La app no estuvo disponible para ZAP tras 120s."
           docker ps -a
           docker logs app-ids || true
+          docker logs pg-ids || true
           exit 1
       - name: Ajustar permisos para ZAP
         run: |
