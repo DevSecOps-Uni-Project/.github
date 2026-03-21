@@ -147,6 +147,11 @@ jobs:
             -e SPRING_DATASOURCE_URL=jdbc:postgresql://pg-ids:5432/idsdb \
             -e SPRING_DATASOURCE_USERNAME=postgres \
             -e SPRING_DATASOURCE_PASSWORD=postgres \
+            -e AZURE_OPENAI_API_KEY=dast-placeholder-key \
+            -e AZURE_OPENAI_ENDPOINT=https://example.openai.azure.com \
+            -e AZURE_OPENAI_DEPLOYMENT=dast-placeholder-deployment \
+            -e AZURE_OPENAI_DEPLOYMENT_NAME=dast-placeholder-deployment \
+            -e AZURE_OPENAI_API_VERSION=2024-02-15-preview \
             ${{ inputs.image-name }}:test
       - name: Esperar disponibilidad de la app
         run: |
