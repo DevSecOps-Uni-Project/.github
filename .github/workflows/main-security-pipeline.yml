@@ -116,14 +116,17 @@ jobs:
       - name: Build Local Image
         run: docker build -t ${{ inputs.image-name }}:test .
 
-      - name: Trivy Scan (Fuerza SARIF)
-        uses: aquasecurity/trivy-action@v0.28.0
-        with:
-          image-ref: '${{ inputs.image-name }}:test'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
-          limit-severities-for-sarif: true
+      - name: Trivy Scan (Fuerza SARIF vía Docker)
+        run: |
+          # Ejecutamos Trivy usando su imagen oficial de Docker
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v $(pwd):/src \
+            aquasec/trivy:0.49.1 image \
+            --format sarif \
+            --output /src/trivy-results.sarif \
+            --severity CRITICAL,HIGH \
+            ${{ inputs.image-name }}:test
 
       - name: Upload Trivy Results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
@@ -131,6 +134,12 @@ jobs:
         with:
           sarif_file: 'trivy-results.sarif'
           category: 'trivy-container'
+
+      - name: Upload Report for IA
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: trivy-results.sarif
 
   # 5. AUDITORÍA FINAL DE IA (IA TRIAGE)
   final-ia-audit:
