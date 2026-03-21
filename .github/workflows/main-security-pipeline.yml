@@ -145,7 +145,20 @@ jobs:
         with:
           name: trivy-report
           path: trivy-results.sarif
-
+# 4.5 ANÁLISIS DINÁMICO (DAST)
+  dast-scan:
+    name: "4.5 Análisis Dinámico (ZAP)"
+    needs: container-security
+    runs-on: ubuntu-latest
+    steps:
+      - name: Levantar Aplicación
+        run: docker run -d -p 8080:8080 ${{ inputs.image-name }}:test
+        
+      - name: ZAP Scan
+        uses: zaproxy/action-api-scan@v0.6.0
+        with:
+          target: 'http://localhost:8080'
+          format: openapi
   # 5. AUDITORÍA FINAL DE IA (IA TRIAGE)
   final-ia-audit:
     name: "5. Auditoría de IA y Decisiones"
