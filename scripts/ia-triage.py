@@ -7,9 +7,22 @@ def load_json_safely(file_path):
         return None
     try:
         with open(file_path, 'r') as f:
-            return json.load(f)
+            content = f.read().strip()
+            if not content:
+                return None
+            
+            if "}{" in content or "}\n{" in content:
+                content = content.split("}")[0] + "}"
+            
+            return json.loads(content)
     except Exception as e:
-        print(f"⚠️ Error procesando {file_path}: {e}")
+        try:
+            import re
+            clean_content = re.search(r'({.*})', content, re.DOTALL)
+            if clean_content:
+                return json.loads(clean_content.group(1))
+        except:
+            print(f"⚠️ Error procesando {file_path}: {e}")
         return None
 
 def analyze_all():
