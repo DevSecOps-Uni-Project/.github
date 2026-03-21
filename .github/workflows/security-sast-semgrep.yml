@@ -1,0 +1,28 @@
+name: "Security - SAST Semgrep"
+
+on:
+  workflow_call:
+
+jobs:
+  sast-semgrep:
+    name: "2. SAST (Semgrep)"
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    continue-on-error: true
+    steps:
+      - name: Checkout Codigo
+        uses: actions/checkout@v4
+
+      - name: Semgrep Scan
+        run: |
+          docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan \
+            --config="p/default" --config="p/security-audit" --config="p/secrets" \
+            --exclude="mvnw*" --exclude=".mvn/" --sarif --output=semgrep-results.sarif || [ $? -eq 7 ]
+
+      - name: Upload Semgrep Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: semgrep-report
+          path: semgrep-results.sarif

@@ -1,0 +1,75 @@
+name: "Security - Final IA Audit"
+
+on:
+  workflow_call:
+
+jobs:
+  final-ia-audit:
+    name: "5. Auditoria de IA y Decisiones"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Gobernanza
+        uses: actions/checkout@v4
+        with:
+          repository: DevSecOps-Uni-Project/.github
+          path: governance-tools
+
+      - name: Descargar TODOS los Reportes
+        uses: actions/download-artifact@v4
+        with:
+          path: all-reports
+
+      - name: Consolidar y Ejecutar IA
+        shell: python
+        run: |
+          import os, shutil, glob
+
+          report_map = {
+              'all-reports/snyk-report/snyk-results.json': 'snyk-results.json',
+              'all-reports/trivy-report/trivy-results.sarif': 'trivy-results.sarif',
+              'all-reports/semgrep-report/semgrep-results.sarif': 'semgrep-results.sarif',
+              'all-reports/project-sbom/bom.json': 'project-sbom.json'
+          }
+
+          print("--- Consolidando reportes de seguridad ---")
+          for src, dest in report_map.items():
+              if os.path.exists(src):
+                  shutil.copy(src, dest)
+                  print(f"{dest} cargado correctamente.")
+              else:
+                  found = glob.glob(f"**/{os.path.basename(src)}", recursive=True)
+                  if found:
+                      shutil.copy(found[0], dest)
+                      print(f"{dest} encontrado mediante busqueda recursiva.")
+                  else:
+                      print(f"Error: No se pudo localizar {src}")
+
+          zap_candidates = [
+              'all-reports/zap-report/zap_report.html',
+              'all-reports/zap-report/report_html.html',
+              'zap_report.html',
+              'report_html.html'
+          ]
+          zap_files = [p for p in zap_candidates if os.path.exists(p)]
+          if not zap_files:
+              zap_patterns = ["**/zap*.html", "**/report_html*.html"]
+              for pattern in zap_patterns:
+                  found = glob.glob(pattern, recursive=True)
+                  if found:
+                      zap_files = found
+                      break
+
+          if zap_files:
+              shutil.copy(zap_files[0], 'zap-results.html')
+              print(f"zap-results.html listo para triage (origen: {zap_files[0]}).")
+          else:
+              with open('zap-results.html', 'w', encoding='utf-8') as f:
+                  f.write('<html><body>No ZAP data</body></html>')
+              print('ZAP no disponible en artifacts; se continua con placeholder neutro.')
+
+          print("\n--- Iniciando Triage de IA ---")
+          exit_code = os.system('python governance-tools/scripts/ia-triage.py')
+          if exit_code != 0:
+              print("\nGOBERNANZA: El proyecto no cumple los estandares de seguridad.")
+              exit(1)
+          print("\nGOBERNANZA: Proyecto aprobado.")

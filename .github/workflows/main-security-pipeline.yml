@@ -1,4 +1,4 @@
-name: "DevSecOps Governance: Multi-Stage Security"
+name: "DevSecOps Governance: Main Security Orchestrator"
 
 on:
   workflow_call:
@@ -15,265 +15,56 @@ on:
     secrets:
       SNYK_TOKEN:
         required: true
+  workflow_dispatch:
+    inputs:
+      java-version:
+        description: "Version de Java para SCA/SBOM"
+        required: false
+        default: "21"
+      image-name:
+        description: "Nombre de imagen para escaneo de contenedor"
+        required: false
+        default: "backend-ids"
+      app-port:
+        description: "Puerto de la aplicacion para DAST"
+        required: false
+        default: "8080"
 
 jobs:
-  # 1. ESCANEO DE SECRETOS
   secrets-audit:
-    name: "1. Guardián de Secretos"
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Código
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 
-      - name: TruffleHog OSS
-        uses: trufflesecurity/trufflehog@main
-        with:
-          path: ./
-          base: ${{ github.event.repository.default_branch }}
-          head: HEAD
-          extra_args: --only-verified
+    name: "Orquestacion - Secretos"
+    uses: ./.github/workflows/security-secrets-audit.yml
 
-  # 2. SAST (SEMGREP)
   sast-semgrep:
-    name: "2. SAST (Semgrep)"
+    name: "Orquestacion - SAST"
     needs: secrets-audit
-    runs-on: ubuntu-latest
-    permissions:
-      security-events: write
-    continue-on-error: true 
-    steps:
-      - name: Checkout Código
-        uses: actions/checkout@v4
-      - name: Semgrep Scan
-        run: |
-          docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan \
-            --config="p/default" --config="p/security-audit" --config="p/secrets" \
-            --exclude="mvnw*" --exclude=".mvn/" --sarif --output=semgrep-results.sarif || [ $? -eq 7 ]
-      - name: Upload Semgrep Report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: semgrep-report
-          path: semgrep-results.sarif
+    uses: ./.github/workflows/security-sast-semgrep.yml
 
-  # 3. SCA (SNYK) - AQUÍ ESTÁN LOS 9 RIESGOS (2C/7H)
   dependency-scan:
-    name: "3. SCA (Snyk)"
+    name: "Orquestacion - SCA"
     needs: secrets-audit
-    runs-on: ubuntu-latest
-    continue-on-error: true 
-    steps:
-      - name: Checkout Código
-        uses: actions/checkout@v4 
-      - name: Setup Java
-        uses: actions/setup-java@v4 
-        with:
-          java-version: ${{ inputs.java-version }}
-          distribution: 'temurin'
-      - name: Run Snyk
-        run: |
-          npm install -g snyk
-          snyk auth ${{ secrets.SNYK_TOKEN }}
-          # Generamos el JSON. El '|| true' permite que el pipeline siga para que la IA analice los fallos
-          snyk test --file=pom.xml --json > snyk-results.json || true
-      - name: Upload Snyk Report
-        uses: actions/upload-artifact@v4 
-        if: always()
-        with:
-          name: snyk-report
-          path: snyk-results.json
+    uses: ./.github/workflows/security-sca-snyk.yml
+    with:
+      java-version: ${{ inputs.java-version || github.event.inputs.java-version || '21' }}
+    secrets: inherit
 
-  # 3.5 GENERACIÓN DE SBOM
   sbom-generation:
-    name: "3.5 Inventario SBOM"
+    name: "Orquestacion - SBOM"
     needs: secrets-audit
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Código
-        uses: actions/checkout@v4
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          java-version: ${{ inputs.java-version }}
-          distribution: 'temurin'
-      - name: Generar SBOM
-        run: mvn org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom -Dcyclonedx.skipAttach=true
-      - name: Upload SBOM Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: project-sbom
-          path: target/bom.json
+    uses: ./.github/workflows/security-sbom.yml
+    with:
+      java-version: ${{ inputs.java-version || github.event.inputs.java-version || '21' }}
 
-  # 4. SEGURIDAD DE INFRAESTRUCTURA (CONTENEDORES + DAST)
   container-and-dast-security:
-    name: "4. Contenedores y DAST"
+    name: "Orquestacion - Contenedores y DAST"
     needs: [sast-semgrep, dependency-scan]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Código
-        uses: actions/checkout@v4
-      - name: Build Local Image
-        run: docker build -t ${{ inputs.image-name }}:test .
-      - name: Trivy Scan
-        run: |
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $(pwd):/src \
-            aquasec/trivy:0.49.1 image --format sarif --output /src/trivy-results.sarif \
-            --severity CRITICAL,HIGH ${{ inputs.image-name }}:test
-      - name: Levantar PostgreSQL efímero para DAST
-        run: |
-          set -e
-          docker network create ids-net
-          docker run -d --name pg-ids --network ids-net \
-            -e POSTGRES_DB=idsdb \
-            -e POSTGRES_USER=postgres \
-            -e POSTGRES_PASSWORD=postgres \
-            postgres:16
+    uses: ./.github/workflows/security-container-dast.yml
+    with:
+      image-name: ${{ inputs.image-name || github.event.inputs.image-name || 'backend-ids' }}
+      app-port: ${{ inputs.app-port || github.event.inputs.app-port || '8080' }}
 
-          for i in {1..24}; do
-            if docker exec pg-ids pg_isready -U postgres -d idsdb >/dev/null 2>&1; then
-              echo "✅ PostgreSQL disponible para la app."
-              exit 0
-            fi
-            sleep 5
-          done
-
-          echo "❌ PostgreSQL no estuvo listo tras 120s."
-          docker logs pg-ids || true
-          exit 1
-      - name: Levantar Aplicación
-        run: |
-          docker run -d --name app-ids --network ids-net -p ${{ inputs.app-port }}:${{ inputs.app-port }} \
-            -e SPRING_DATASOURCE_URL=jdbc:postgresql://pg-ids:5432/idsdb \
-            -e SPRING_DATASOURCE_USERNAME=postgres \
-            -e SPRING_DATASOURCE_PASSWORD=postgres \
-            -e AZURE_OPENAI_API_KEY=dast-placeholder-key \
-            -e AZURE_OPENAI_ENDPOINT=https://example.openai.azure.com \
-            -e AZURE_OPENAI_DEPLOYMENT=dast-placeholder-deployment \
-            -e AZURE_OPENAI_DEPLOYMENT_NAME=dast-placeholder-deployment \
-            -e AZURE_OPENAI_API_VERSION=2024-02-15-preview \
-            -e GOOGLE_CLIENT_ID=dast-placeholder-client-id \
-            -e GOOGLE_CLIENT_SECRET=dast-placeholder-client-secret \
-            -e ML_ENDPOINT=https://example.com/predict \
-            ${{ inputs.image-name }}:test
-      - name: Esperar disponibilidad de la app
-        run: |
-          set -e
-          APP_URL="http://localhost:${{ inputs.app-port }}"
-          echo "Esperando que la app responda en ${APP_URL} ..."
-          for i in {1..24}; do
-            if curl -fsS "${APP_URL}" >/dev/null 2>&1 || curl -fsS "${APP_URL}/actuator/health" >/dev/null 2>&1; then
-              echo "✅ App disponible para ZAP en ${APP_URL}."
-              exit 0
-            fi
-            sleep 5
-          done
-
-          echo "❌ La app no estuvo disponible para ZAP tras 120s."
-          docker ps -a
-          docker logs app-ids || true
-          docker logs pg-ids || true
-          exit 1
-      - name: Ajustar permisos para ZAP
-        run: |
-          sudo chmod -R a+rwX "$GITHUB_WORKSPACE"
-      - name: ZAP Scan
-        uses: zaproxy/action-baseline@v0.12.0
-        continue-on-error: true
-        with:
-          target: 'http://localhost:${{ inputs.app-port }}'
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fail_action: false
-          cmd_options: '-r zap_report.html'
-      - name: Upload ZAP Report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: zap-report
-          path: |
-            zap_report.html
-            report_html.html
-          if-no-files-found: warn
-      - name: Upload Trivy Report
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-report
-          path: trivy-results.sarif
-
-  # 5. AUDITORÍA FINAL DE IA
   final-ia-audit:
-    name: "5. Auditoría de IA y Decisiones"
-    needs: [sast-semgrep, dependency-scan, container-and-dast-security, sbom-generation] 
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Gobernanza
-        uses: actions/checkout@v4
-        with:
-          repository: DevSecOps-Uni-Project/.github
-          path: governance-tools
-      
-      - name: Descargar TODOS los Reportes
-        uses: actions/download-artifact@v4
-        with:
-          path: all-reports # Descarga cada artifact en su propia subcarpeta
-
-      - name: Consolidar y Ejecutar IA
-        shell: python
-        run: |
-          import os, shutil, glob
-          
-          # Mapeo corregido basándose en la estructura de 'download-artifact@v4'
-          # Formato: 'all-reports/NOMBRE_DEL_ARTIFACT/ARCHIVO'
-          report_map = {
-              'all-reports/snyk-report/snyk-results.json': 'snyk-results.json',
-              'all-reports/trivy-report/trivy-results.sarif': 'trivy-results.sarif', 
-              'all-reports/semgrep-report/semgrep-results.sarif': 'semgrep-results.sarif', 
-              'all-reports/project-sbom/bom.json': 'project-sbom.json'
-          }
-          
-          print("--- 📦 Consolidando reportes de seguridad ---")
-          for src, dest in report_map.items():
-              if os.path.exists(src):
-                  shutil.copy(src, dest)
-                  print(f"✅ {dest} cargado correctamente.")
-              else:
-                  # Búsqueda de rescate si el path varía
-                  found = glob.glob(f"**/{os.path.basename(src)}", recursive=True)
-                  if found:
-                      shutil.copy(found[0], dest)
-                      print(f"✅ {dest} encontrado mediante búsqueda recursiva.")
-                  else:
-                      print(f"❌ Error: No se pudo localizar {src}")
-
-          # Lógica específica para ZAP HTML
-          # Primero intentamos rutas conocidas del artifact; luego hacemos búsqueda de rescate.
-          zap_candidates = [
-              'all-reports/zap-report/zap_report.html',
-              'all-reports/zap-report/report_html.html',
-              'zap_report.html',
-              'report_html.html'
-          ]
-          zap_files = [p for p in zap_candidates if os.path.exists(p)]
-          if not zap_files:
-              zap_patterns = ["**/zap*.html", "**/report_html*.html"]
-              for pattern in zap_patterns:
-                  found = glob.glob(pattern, recursive=True)
-                  if found:
-                      zap_files = found
-                      break
-
-          if zap_files:
-              shutil.copy(zap_files[0], 'zap-results.html')
-              print(f"✅ zap-results.html listo para triage (origen: {zap_files[0]}).")
-          else:
-              with open('zap-results.html', 'w') as f:
-                  f.write("<html><body>No ZAP data</body></html>")
-              print("ℹ️ ZAP no disponible en artifacts; se continúa con placeholder neutro.")
-
-          print("\n--- 🤖 Iniciando Triage de IA ---")
-          # Ejecución del script en tu repo de gobernanza
-          exit_code = os.system('python governance-tools/scripts/ia-triage.py')
-          if exit_code != 0:
-              print("\n⛔ GOBERNANZA: El proyecto no cumple los estándares de seguridad.")
-              exit(1)
-          print("\n🟢 GOBERNANZA: Proyecto aprobado.")
+    name: "Orquestacion - Gate Final"
+    needs: [sast-semgrep, dependency-scan, container-and-dast-security, sbom-generation]
+    uses: ./.github/workflows/security-final-ia-audit.yml
+    secrets: inherit
