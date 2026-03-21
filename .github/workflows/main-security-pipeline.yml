@@ -117,17 +117,17 @@ jobs:
         run: docker build -t ${{ inputs.image-name }}:test .
 
       - name: Trivy Scan (Fuerza SARIF)
-        uses: aquasecurity/trivy-action@v0.28.0 # Usa una versión específica estable
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: '${{ inputs.image-name }}:test'
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
-          limit-severities-for-sarif: true # Limita para que el SARIF no sea gigante
+          limit-severities-for-sarif: true
 
       - name: Upload Trivy Results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
-        if: always() # Sube los resultados incluso si el escaneo encuentra fallos
+        if: always()
         with:
           sarif_file: 'trivy-results.sarif'
           category: 'trivy-container'
