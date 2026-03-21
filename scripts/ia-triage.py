@@ -6,23 +6,23 @@ def load_json_safely(file_path):
     if not os.path.exists(file_path):
         return None
     try:
-        with open(file_path, 'r') as f:
+        with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read().strip()
-            if not content:
-                return None
+            if not content: return None
             
-            if "}{" in content or "}\n{" in content:
-                content = content.split("}")[0] + "}"
-            
+            # Si Snyk pegó varios JSONs, intentamos rescatar el primero válido
+            if content.startswith('[') or content.startswith('{'):
+                try:
+                    return json.loads(content)
+                except json.JSONDecodeError:
+                    # Buscamos el final del primer objeto JSON válido
+                    import re
+                    match = re.search(r'({[\s\S]*?\n})', content)
+                    if match:
+                        return json.loads(match.group(1))
             return json.loads(content)
     except Exception as e:
-        try:
-            import re
-            clean_content = re.search(r'({.*})', content, re.DOTALL)
-            if clean_content:
-                return json.loads(clean_content.group(1))
-        except:
-            print(f"⚠️ Error procesando {file_path}: {e}")
+        print(f"⚠️ Error procesando {file_path}: {e}")
         return None
 
 def analyze_all():
