@@ -158,8 +158,8 @@ jobs:
           
           report_map = {
               'snyk-report/snyk-results.json': 'snyk-results.json',
-              'container-security/trivy-results.sarif': 'trivy-results.sarif',
-              'sast-semgrep/semgrep-results.sarif': 'semgrep-results.sarif',
+              'trivy-report/trivy-results.sarif': 'trivy-results.sarif', 
+              'semgrep-report/semgrep-results.sarif': 'semgrep-results.sarif', 
               'project-sbom/bom.json': 'project-sbom.json'  # <-- Mapeo del SBOM
           }
           
