@@ -112,17 +112,22 @@ jobs:
     steps:
       - name: Checkout Código
         uses: actions/checkout@v4
+
       - name: Build Local Image
         run: docker build -t ${{ inputs.image-name }}:test .
-      - name: Trivy Scan
-        uses: aquasecurity/trivy-action@master
+
+      - name: Trivy Scan (Fuerza SARIF)
+        uses: aquasecurity/trivy-action@0.28.0 # Usa una versión específica estable
         with:
           image-ref: '${{ inputs.image-name }}:test'
-          format: 'json'
+          format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
-      - name: Upload Report
+          limit-severities-for-sarif: true # Limita para que el SARIF no sea gigante
+
+      - name: Upload Trivy Results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
+        if: always() # Sube los resultados incluso si el escaneo encuentra fallos
         with:
           sarif_file: 'trivy-results.sarif'
           category: 'trivy-container'
