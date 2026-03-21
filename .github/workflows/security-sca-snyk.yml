@@ -8,7 +8,7 @@ on:
         default: '21'
     secrets:
       SNYK_TOKEN:
-        required: false
+        required: true
 
 jobs:
   dependency-scan:
@@ -27,14 +27,9 @@ jobs:
 
       - name: Run Snyk
         run: |
-          if [ -n "${{ secrets.SNYK_TOKEN }}" ]; then
-            npm install -g snyk
-            snyk auth ${{ secrets.SNYK_TOKEN }}
-            snyk test --file=pom.xml --json > snyk-results.json || true
-          else
-            echo '{"ok":false,"reason":"SNYK_TOKEN not provided; SCA scan skipped"}' > snyk-results.json
-            echo "SNYK_TOKEN no configurado; se omite escaneo Snyk."
-          fi
+          npm install -g snyk
+          snyk auth ${{ secrets.SNYK_TOKEN }}
+          snyk test --file=pom.xml --json > snyk-results.json || true
 
       - name: Upload Snyk Report
         uses: actions/upload-artifact@v4
