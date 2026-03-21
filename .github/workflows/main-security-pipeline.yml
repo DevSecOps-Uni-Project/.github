@@ -36,6 +36,8 @@ jobs:
     name: "2. SAST (Semgrep)"
     needs: secrets-audit
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write
     continue-on-error: true 
     steps:
       - name: Checkout Código
@@ -44,13 +46,13 @@ jobs:
         run: |
           docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan \
             --config="p/default" --config="p/security-audit" --config="p/secrets" \
-            --exclude="mvnw*" --exclude=".mvn/" --json --output=semgrep-results.json || [ $? -eq 7 ]
-      - name: Upload Report
-        uses: actions/upload-artifact@v4
+            --exclude="mvnw*" --exclude=".mvn/" --sarif --output=semgrep-results.sarif || [ $? -eq 7 ]
+      - name: Upload Semgrep to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
-          name: semgrep-report
-          path: semgrep-results.json
+          sarif_file: 'semgrep-results.sarif'
+          category: 'semgrep-sast'
 
   # 3. SCA (SNYK)
   dependency-scan:
@@ -105,6 +107,8 @@ jobs:
     name: "4. Seguridad de Contenedores"
     needs: [sast-semgrep, dependency-scan]
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write
     steps:
       - name: Checkout Código
         uses: actions/checkout@v4
@@ -115,13 +119,13 @@ jobs:
         with:
           image-ref: '${{ inputs.image-name }}:test'
           format: 'json'
-          output: 'trivy-results.json'
+          output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
       - name: Upload Report
-        uses: actions/upload-artifact@v4
+        uses: github/codeql-action/upload-sarif@v3
         with:
-          name: trivy-report
-          path: trivy-results.json
+          sarif_file: 'trivy-results.sarif'
+          category: 'trivy-container'
 
   # 5. AUDITORÍA FINAL DE IA (IA TRIAGE)
   final-ia-audit:
@@ -149,8 +153,8 @@ jobs:
           
           report_map = {
               'snyk-report/snyk-results.json': 'snyk-results.json',
-              'trivy-report/trivy-results.json': 'trivy-results.json',
-              'semgrep-report/semgrep-results.json': 'semgrep-results.json',
+              'container-security/trivy-results.sarif': 'trivy-results.sarif',
+              'sast-semgrep/semgrep-results.sarif': 'semgrep-results.sarif',
               'project-sbom/bom.json': 'project-sbom.json'  # <-- Mapeo del SBOM
           }
           
