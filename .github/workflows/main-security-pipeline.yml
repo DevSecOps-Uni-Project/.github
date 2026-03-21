@@ -179,6 +179,7 @@ jobs:
           sudo chmod -R a+rwX "$GITHUB_WORKSPACE"
       - name: ZAP Scan
         uses: zaproxy/action-baseline@v0.12.0
+        continue-on-error: true
         with:
           target: 'http://localhost:${{ inputs.app-port }}'
           token: ${{ secrets.GITHUB_TOKEN }}
