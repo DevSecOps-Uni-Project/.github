@@ -185,15 +185,30 @@ jobs:
                   else:
                       print(f"❌ Error: No se pudo localizar {src}")
 
-          # Lógica específica para ZAP HTML
-          zap_files = glob.glob("**/zap*.html", recursive=True)
-          if zap_files:
+            # Lógica específica para ZAP HTML
+            # Primero intentamos rutas conocidas del artifact; luego hacemos búsqueda de rescate.
+            zap_candidates = [
+              'all-reports/zap-report/zap_report.html',
+              'all-reports/zap-report/report_html.html',
+              'zap_report.html',
+              'report_html.html'
+            ]
+            zap_files = [p for p in zap_candidates if os.path.exists(p)]
+            if not zap_files:
+              zap_patterns = ["**/zap*.html", "**/report_html*.html"]
+              for pattern in zap_patterns:
+                found = glob.glob(pattern, recursive=True)
+                if found:
+                  zap_files = found
+                  break
+
+            if zap_files:
               shutil.copy(zap_files[0], 'zap-results.html')
-              print(f"✅ zap-results.html listo para triage.")
-          else:
+              print(f"✅ zap-results.html listo para triage (origen: {zap_files[0]}).")
+            else:
               with open('zap-results.html', 'w') as f:
-                  f.write("<html><body>No ZAP data</body></html>")
-              print("⚠️ Aviso: Reporte ZAP no encontrado.")
+                f.write("<html><body>No ZAP data</body></html>")
+              print("ℹ️ ZAP no disponible en artifacts; se continúa con placeholder neutro.")
 
           print("\n--- 🤖 Iniciando Triage de IA ---")
           # Ejecución del script en tu repo de gobernanza
