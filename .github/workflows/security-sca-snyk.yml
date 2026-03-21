@@ -8,7 +8,7 @@ on:
         default: '21'
     secrets:
       SNYK_TOKEN:
-        required: true
+        required: false
 
 jobs:
   dependency-scan:
@@ -18,6 +18,13 @@ jobs:
     steps:
       - name: Checkout Codigo
         uses: actions/checkout@v4
+
+      - name: Validar SNYK_TOKEN
+        run: |
+          if [ -z "${{ secrets.SNYK_TOKEN }}" ]; then
+            echo "SNYK_TOKEN no esta configurado o llego vacio en el caller."
+            exit 1
+          fi
 
       - name: Setup Java
         uses: actions/setup-java@v4

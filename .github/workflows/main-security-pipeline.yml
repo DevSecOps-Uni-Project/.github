@@ -14,7 +14,7 @@ on:
         default: '8080'
     secrets:
       SNYK_TOKEN:
-        required: true
+        required: false
   workflow_dispatch:
     inputs:
       java-version:
@@ -46,7 +46,8 @@ jobs:
     uses: ./.github/workflows/security-sca-snyk.yml
     with:
       java-version: ${{ inputs.java-version || github.event.inputs.java-version || '21' }}
-    secrets: inherit
+    secrets:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
   sbom-generation:
     name: "Orquestacion - SBOM"
