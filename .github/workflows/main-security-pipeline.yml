@@ -55,6 +55,8 @@ jobs:
     uses: ./.github/workflows/security-sbom.yml
     with:
       java-version: ${{ inputs.java-version || github.event.inputs.java-version || '21' }}
+    secrets:
+      DTRACK_API_KEY: ${{ secrets.DTRACK_API_KEY }}
 
   container-and-dast-security:
     name: "Orquestacion - Contenedores y DAST"

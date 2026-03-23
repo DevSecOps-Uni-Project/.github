@@ -6,6 +6,10 @@ on:
       java-version:
         type: string
         default: '21'
+    # IMPORTANTE: Declaramos que este workflow necesita el secreto
+    secrets:
+      DTRACK_API_KEY:
+        required: true
 
 jobs:
   sbom-generation:
@@ -23,6 +27,17 @@ jobs:
 
       - name: Generar SBOM
         run: mvn org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom -Dcyclonedx.skipAttach=true
+
+      - name: Enviar a Dependency-Track (Automatización)
+        run: |
+          # Usamos curl para subir el bom.json generado en el paso anterior
+          curl -X "POST" "https://tu-instancia-dtrack.com/api/v1/bom" \
+               -H "Content-Type: multipart/form-data" \
+               -H "X-Api-Key: ${{ secrets.DTRACK_API_KEY }}" \
+               -F "projectName=${{ github.event.repository.name }}" \
+               -F "projectVersion=main" \
+               -F "autoCreate=true" \
+               -F "bom=@target/bom.json"
 
       - name: Upload SBOM Artifact
         uses: actions/upload-artifact@v4
