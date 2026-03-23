@@ -30,10 +30,12 @@ jobs:
 
       - name: Enviar a Dependency-Track (Automatización)
         run: |
-          # Usamos curl para subir el bom.json generado en el paso anterior
-          curl -X "POST" "https://tu-instancia-dtrack.com/api/v1/bom" \
+          DTRACK_URL="https://prepositional-undistantly-jestine.ngrok-free.dev/api/v1/bom"
+          
+          curl -X "POST" "$DTRACK_URL" \
                -H "Content-Type: multipart/form-data" \
                -H "X-Api-Key: ${{ secrets.DTRACK_API_KEY }}" \
+               -H "ngrok-skip-browser-warning: true" \
                -F "projectName=${{ github.event.repository.name }}" \
                -F "projectVersion=main" \
                -F "autoCreate=true" \
