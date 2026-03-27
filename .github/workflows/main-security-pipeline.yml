@@ -40,6 +40,11 @@ jobs:
     needs: secrets-audit
     uses: ./.github/workflows/security-sast-semgrep.yml
 
+  sast-codeql:
+    name: "Orquestacion - CodeQL"
+    needs: secrets-audit
+    uses: ./.github/workflows/security-sast-codeql.yml
+
   dependency-scan:
     name: "Orquestacion - SCA"
     needs: secrets-audit
