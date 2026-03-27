@@ -17,8 +17,11 @@ on:
         required: false
       CLAUDE_API_KEY: 
         required: true
+      DTRACK_API_KEY:
+        required: false
   workflow_dispatch:
 
+# Permisos globales para que CodeQL y las herramientas SARIF funcionen
 permissions:
   contents: read
   security-events: write
@@ -26,33 +29,62 @@ permissions:
   actions: read
 
 jobs:
+  # FASE 1: SECRETOS (BLOQUEANTE INICIAL)
   secrets-audit:
     name: "Orquestacion - Secretos"
     uses: ./.github/workflows/security-secrets-audit.yml
 
+  # FASE 2: ANÁLISIS ESTÁTICO Y DEPENDENCIAS (EN PARALELO)
   sast-semgrep:
-    name: "Orquestacion - SAST"
+    name: "Orquestacion - SAST Semgrep"
     needs: secrets-audit
     uses: ./.github/workflows/security-sast-semgrep.yml
 
   sast-codeql:
-    name: "Orquestacion - CodeQL"
+    name: "Orquestacion - SAST CodeQL"
     needs: secrets-audit
+    # Permisos heredados explícitamente para evitar el error de 'packages: none'
+    permissions:
+      contents: read
+      security-events: write
+      packages: read
+      actions: read
     uses: ./.github/workflows/security-sast-codeql.yml
 
   dependency-scan:
-    name: "Orquestacion - SCA"
+    name: "Orquestacion - SCA Snyk"
     needs: secrets-audit
     uses: ./.github/workflows/security-sca-snyk.yml
     with:
-      java-version: ${{ inputs.java-version || '21' }}
+      java-version: ${{ inputs.java-version }}
     secrets:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
+  sbom-inventory:
+    name: "Orquestacion - SBOM"
+    needs: secrets-audit
+    uses: ./.github/workflows/security-sbom.yml
+    with:
+      java-version: ${{ inputs.java-version }}
+    secrets:
+      DTRACK_API_KEY: ${{ secrets.DTRACK_API_KEY }}
 
+  # FASE 3: ANÁLISIS DINÁMICO (DAST) Y CONTENEDORES
+  # Se ejecuta después de que el análisis estático no encuentre bloqueos críticos inmediatos
+  container-and-dast:
+    name: "Orquestacion - Contenedores y DAST"
+    needs: [sast-semgrep, dependency-scan]
+    uses: ./.github/workflows/security-container-dast.yml
+    with:
+      image-name: ${{ inputs.image-name }}
+      app-port: ${{ inputs.app-port }}
+
+  # FASE 4: AUDITORÍA FINAL CON IA (EL CIERRE)
   final-audit:
-    needs: [secrets-audit, dependency-scan, sast-semgrep] 
-    if: always() 
+    name: "Orquestacion - Mentor de IA"
+    # IMPORTANTE: Espera a TODOS los jobs para recolectar todos los archivos JSON/SARIF
+    needs: [secrets-audit, sast-semgrep, sast-codeql, dependency-scan, container-and-dast] 
+    if: always() # Se ejecuta aunque los anteriores fallen para que la IA explique por qué fallaron
     uses: ./.github/workflows/security-final-ia-audit.yml 
     secrets:
       CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
