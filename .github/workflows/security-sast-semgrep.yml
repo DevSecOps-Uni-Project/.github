@@ -16,8 +16,14 @@ jobs:
 
       - name: Semgrep Scan
         run: |
-          # Añadimos --user $(id -u):$(id -g) para evitar problemas de permisos de archivos
-          docker run --user $(id -u):$(id -g) --rm -v $(pwd):/src returntocorp/semgrep semgrep scan \
+          # 1. Definimos SEMGREP_USER_CONFIG_APPEND para redirigir la caché a /tmp
+          # 2. Mantenemos el usuario actual para que el SARIF sea legible por el runner
+          docker run \
+            --user $(id -u):$(id -g) \
+            --rm \
+            -v $(pwd):/src \
+            -e SEMGREP_USER_CONFIG_APPEND=/tmp/.semgrep \
+            returntocorp/semgrep semgrep scan \
             --config="p/default" \
             --config="p/security-audit" \
             --config="p/secrets" \
