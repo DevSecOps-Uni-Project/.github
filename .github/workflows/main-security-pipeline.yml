@@ -19,6 +19,12 @@ on:
         required: true
   workflow_dispatch:
 
+permissions:
+  contents: read
+  security-events: write
+  packages: read 
+  actions: read
+
 jobs:
   secrets-audit:
     name: "Orquestacion - Secretos"
