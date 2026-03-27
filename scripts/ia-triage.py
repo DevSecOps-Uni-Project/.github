@@ -15,34 +15,31 @@ class SecurityNormalizer:
         }
     
     def load_json(self, filename):
-        ruta_archivo = os.path.join(self.results_dir, filename)
-        if not os.path.exists(ruta_archivo):
-            print(f"ℹ️ Archivo no encontrado: {filename}")
-            return None
-        
-        try:
-            with open(ruta_archivo, 'r', encoding='utf-8') as f:
-                content = f.read().strip()
-                if not content: return None
-                
-                # Intento 1: JSON estándar (Snyk/Semgrep/ZAP)
-                try:
-                    return json.loads(content)
-                except json.JSONDecodeError:
-                    # Intento 2: JSONL / Extra Data (TruffleHog o Snyk sucio)
-                    # Esto soluciona el error "Extra data: line 2 column 1"
-                    hallazgos = []
-                    f.seek(0)
-                    for linea in f:
-                        linea = linea.strip()
-                        if linea.startswith('{'):
-                            try:
-                                hallazgos.append(json.loads(linea))
-                            except: continue
-                    return hallazgos if hallazgos else None
-        except Exception as e:
-            print(f"⚠️ Error cargando {filename}: {str(e)}")
-            return None
+    ruta_archivo = os.path.join(self.results_dir, filename)
+    if not os.path.exists(ruta_archivo):
+        return None
+    
+    try:
+        with open(ruta_archivo, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+            
+            # Intento 1: JSON puro
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError:
+                hallazgos = []
+                f.seek(0)
+                for linea in f:
+                    linea = linea.strip()
+                    if linea.startswith('{'):
+                        try:
+                            hallazgos.append(json.loads(linea))
+                        except: continue
+                return hallazgos if hallazgos else None
+    except Exception as e:
+        print(f"⚠️ Error cargando {filename}: {str(e)}")
+        return None
+
 
     def process_trufflehog(self, filename='trufflehog-results.json'):
         data = self.load_json(filename)
