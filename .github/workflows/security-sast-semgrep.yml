@@ -16,13 +16,8 @@ jobs:
 
       - name: Semgrep Scan
         run: |
-          # 1. Definimos SEMGREP_USER_CONFIG_APPEND para redirigir la caché a /tmp
-          # 2. Mantenemos el usuario actual para que el SARIF sea legible por el runner
-          docker run \
-            --user $(id -u):$(id -g) \
-            --rm \
+          docker run --rm \
             -v $(pwd):/src \
-            -e SEMGREP_USER_CONFIG_APPEND=/tmp/.semgrep \
             returntocorp/semgrep semgrep scan \
             --config="p/default" \
             --config="p/security-audit" \
@@ -30,6 +25,8 @@ jobs:
             --exclude="mvnw*" \
             --exclude=".mvn/" \
             --sarif --output=semgrep-results.sarif || [ $? -eq 7 ]
+
+          sudo chown $(id -u):$(id -g) semgrep-results.sarif
 
       - name: Upload Semgrep Report
         uses: actions/upload-artifact@v4
