@@ -36,9 +36,7 @@ jobs:
         run: |
           npm install -g snyk
           snyk auth ${{ secrets.SNYK_TOKEN }}
-          # Generamos JSON para tu script de IA (triage)
-          snyk test --file=pom.xml --json > snyk-results.json || true
-          # Generamos SARIF para la pestaña de Seguridad de GitHub
+          snyk test --file=pom.xml --json-file-output=snyk-results.json || true
           snyk test --file=pom.xml --sarif-file-output=snyk.sarif || true
 
       - name: Upload SARIF to GitHub Security

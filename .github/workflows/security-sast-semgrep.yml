@@ -9,29 +9,42 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       security-events: write
+      contents: read
     continue-on-error: true
     steps:
       - name: Checkout Codigo
         uses: actions/checkout@v4
 
-      - name: Semgrep Scan
+      - name: Semgrep Scan (JSON para IA)
         run: |
-          docker run --rm \
-            -v $(pwd):/src \
-            returntocorp/semgrep semgrep scan \
+          # Generamos JSON puro. Usamos la imagen oficial pero extraemos el archivo correctamente.
+          docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan \
             --config="p/default" \
             --config="p/security-audit" \
             --config="p/secrets" \
-            --exclude="mvnw*" \
-            --exclude=".mvn/" \
-            --sarif --output=semgrep-results.sarif || [ $? -eq 7 ]
+            --json --output=semgrep-results.json || true
+          
+          # Ajustar permisos para que el Runner pueda leer el archivo generado por Docker
+          sudo chown $(id -u):$(id -g) semgrep-results.json
 
+      - name: Semgrep Scan (SARIF para GitHub)
+        run: |
+          docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan \
+            --config="p/default" \
+            --sarif --output=semgrep-results.sarif || true
+          
           sudo chown $(id -u):$(id -g) semgrep-results.sarif
 
-      - name: Upload Semgrep Report
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep-results.sarif
+
+      - name: Upload Semgrep Report (Artifact)
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: semgrep-report
-          path: semgrep-results.sarif
+          path: semgrep-results.json
           retention-days: 1
