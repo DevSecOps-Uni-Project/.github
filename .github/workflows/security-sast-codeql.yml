@@ -27,3 +27,16 @@ jobs:
       uses: github/codeql-action/analyze@v3
       with:
         category: "/language:java-kotlin"
+        upload: true 
+
+
+    - name: Export CodeQL Results for IA
+      run: |
+        # Buscamos el archivo sarif generado por CodeQL
+        cp ../results/java-kotlin.sarif ./codeql-results.sarif || echo "No se encontró SARIF"
+
+    - name: Upload CodeQL Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: codeql-report
+        path: codeql-results.sarif

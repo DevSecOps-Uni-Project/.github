@@ -16,9 +16,14 @@ jobs:
 
       - name: Semgrep Scan
         run: |
-          docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan \
-            --config="p/default" --config="p/security-audit" --config="p/secrets" \
-            --exclude="mvnw*" --exclude=".mvn/" --sarif --output=semgrep-results.sarif || [ $? -eq 7 ]
+          # Añadimos --user $(id -u):$(id -g) para evitar problemas de permisos de archivos
+          docker run --user $(id -u):$(id -g) --rm -v $(pwd):/src returntocorp/semgrep semgrep scan \
+            --config="p/default" \
+            --config="p/security-audit" \
+            --config="p/secrets" \
+            --exclude="mvnw*" \
+            --exclude=".mvn/" \
+            --sarif --output=semgrep-results.sarif || [ $? -eq 7 ]
 
       - name: Upload Semgrep Report
         uses: actions/upload-artifact@v4
@@ -26,3 +31,4 @@ jobs:
         with:
           name: semgrep-report
           path: semgrep-results.sarif
+          retention-days: 1

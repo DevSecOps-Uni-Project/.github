@@ -15,20 +15,9 @@ on:
     secrets:
       SNYK_TOKEN:
         required: false
+      CLAUDE_API_KEY: 
+        required: true
   workflow_dispatch:
-    inputs:
-      java-version:
-        description: "Version de Java para SCA/SBOM"
-        required: false
-        default: "21"
-      image-name:
-        description: "Nombre de imagen para escaneo de contenedor"
-        required: false
-        default: "backend-ids"
-      app-port:
-        description: "Puerto de la aplicacion para DAST"
-        required: false
-        default: "8080"
 
 jobs:
   secrets-audit:
@@ -50,29 +39,14 @@ jobs:
     needs: secrets-audit
     uses: ./.github/workflows/security-sca-snyk.yml
     with:
-      java-version: ${{ inputs.java-version || github.event.inputs.java-version || '21' }}
+      java-version: ${{ inputs.java-version || '21' }}
     secrets:
       SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
-  sbom-generation:
-    name: "Orquestacion - SBOM"
-    needs: secrets-audit
-    uses: ./.github/workflows/security-sbom.yml
-    with:
-      java-version: ${{ inputs.java-version || github.event.inputs.java-version || '21' }}
+
+  final-audit:
+    needs: [secrets-audit, dependency-scan, sast-semgrep] 
+    if: always() 
+    uses: ./.github/workflows/security-final-ia-audit.yml 
     secrets:
-      DTRACK_API_KEY: ${{ secrets.DTRACK_API_KEY }}
-
-  container-and-dast-security:
-    name: "Orquestacion - Contenedores y DAST"
-    needs: [sast-semgrep, dependency-scan]
-    uses: ./.github/workflows/security-container-dast.yml
-    with:
-      image-name: ${{ inputs.image-name || github.event.inputs.image-name || 'backend-ids' }}
-      app-port: ${{ inputs.app-port || github.event.inputs.app-port || '8080' }}
-
-  final-ia-audit:
-    name: "Orquestacion - Gate Final"
-    needs: [sast-semgrep, dependency-scan, container-and-dast-security, sbom-generation]
-    uses: ./.github/workflows/security-final-ia-audit.yml
-    secrets: inherit
+      CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}

@@ -6,7 +6,6 @@ on:
       java-version:
         type: string
         default: '21'
-    # IMPORTANTE: Declaramos que este workflow necesita el secreto
     secrets:
       DTRACK_API_KEY:
         required: true
@@ -24,11 +23,13 @@ jobs:
         with:
           java-version: ${{ inputs.java-version }}
           distribution: 'temurin'
+          cache: 'maven' 
 
       - name: Generar SBOM
         run: mvn org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom -Dcyclonedx.skipAttach=true
 
-      - name: Enviar a Dependency-Track (Automatización)
+      - name: Enviar a Dependency-Track
+        continue-on-error: true 
         run: |
           DTRACK_URL="https://prepositional-undistantly-jestine.ngrok-free.dev/api/v1/bom"
           
@@ -46,3 +47,4 @@ jobs:
         with:
           name: project-sbom
           path: target/bom.json
+          retention-days: 5
