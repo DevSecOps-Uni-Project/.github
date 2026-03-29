@@ -90,4 +90,17 @@ jobs:
           fi
 
           echo "Using triage script: ${TRIAGE_SCRIPT}"
+          set +e
           python "${TRIAGE_SCRIPT}" security-results
+          TRIAGE_EXIT_CODE=$?
+          set -e
+
+          if [ "${TRIAGE_EXIT_CODE}" -eq 0 ]; then
+            echo "AI triage completado: sin hallazgos prioritarios."
+          elif [ "${TRIAGE_EXIT_CODE}" -eq 1 ]; then
+            echo "AI triage completado: se detectaron hallazgos."
+            echo "No se falla el job por hallazgos; la decision de bloqueo queda al pipeline principal."
+          else
+            echo "ERROR: AI triage no pudo ejecutarse correctamente (exit ${TRIAGE_EXIT_CODE})."
+            exit "${TRIAGE_EXIT_CODE}"
+          fi

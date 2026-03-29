@@ -152,9 +152,18 @@ def main():
         sys.exit(0)
 
     report = normalizer.call_claude_ai(phase, issues)
+    had_runtime_error = isinstance(report, str) and report.startswith("❌ Error")
     if summary_path:
         with open(summary_path, 'a', encoding='utf-8') as f:
             f.write(f"\n# 🤖 Reporte de Auditoría IA\n{report}")
+
+    # Exit codes:
+    # 0 -> no findings
+    # 1 -> findings detected (security gate decision)
+    # 2 -> runtime error (missing API key, provider error, etc.)
+    if had_runtime_error:
+        sys.exit(2)
+
     sys.exit(1)
 
 if __name__ == "__main__":
