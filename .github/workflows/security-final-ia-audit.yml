@@ -14,6 +14,12 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Checkout Governance Tools
+        uses: actions/checkout@v4
+        with:
+          repository: DevSecOps-Uni-Project/.github
+          path: governance-tools
+
       - name: Download All Security Artifacts
         uses: actions/download-artifact@v4
         with:
@@ -28,8 +34,18 @@ jobs:
 
       - name: Normalize Security Results
         run: |
-          chmod +x scripts/normalize-security-results.sh
-          scripts/normalize-security-results.sh downloaded-artifacts security-results
+          if [ -f scripts/normalize-security-results.sh ]; then
+            NORMALIZER_SCRIPT="scripts/normalize-security-results.sh"
+          elif [ -f governance-tools/scripts/normalize-security-results.sh ]; then
+            NORMALIZER_SCRIPT="governance-tools/scripts/normalize-security-results.sh"
+          else
+            echo "ERROR: No se encontro normalize-security-results.sh en scripts/ ni en governance-tools/scripts/."
+            exit 1
+          fi
+
+          echo "Using normalizer: ${NORMALIZER_SCRIPT}"
+          chmod +x "${NORMALIZER_SCRIPT}"
+          "${NORMALIZER_SCRIPT}" downloaded-artifacts security-results
 
       - name: Ensure Required JSON Files
         run: |
@@ -64,4 +80,14 @@ jobs:
           CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python scripts/ia-triage.py security-results
+          if [ -f scripts/ia-triage.py ]; then
+            TRIAGE_SCRIPT="scripts/ia-triage.py"
+          elif [ -f governance-tools/scripts/ia-triage.py ]; then
+            TRIAGE_SCRIPT="governance-tools/scripts/ia-triage.py"
+          else
+            echo "ERROR: No se encontro ia-triage.py en scripts/ ni en governance-tools/scripts/."
+            exit 1
+          fi
+
+          echo "Using triage script: ${TRIAGE_SCRIPT}"
+          python "${TRIAGE_SCRIPT}" security-results
