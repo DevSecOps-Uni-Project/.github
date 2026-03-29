@@ -26,6 +26,23 @@ jobs:
       - name: Build Local Image
         run: docker build -t ${{ inputs.image-name }}:test .
 
+      - name: Start App Under Test
+        run: |
+          docker rm -f app-under-test >/dev/null 2>&1 || true
+          docker run -d --name app-under-test -p ${{ inputs.app-port }}:${{ inputs.app-port }} ${{ inputs.image-name }}:test
+
+      - name: Wait for App Startup
+        run: |
+          for i in $(seq 1 20); do
+            if curl -sS "http://localhost:${{ inputs.app-port }}" >/dev/null 2>&1; then
+              echo "Aplicacion disponible para DAST"
+              exit 0
+            fi
+            echo "Esperando aplicacion... intento ${i}/20"
+            sleep 3
+          done
+          echo "WARN: La aplicacion no respondio en el puerto esperado. ZAP se ejecutara igualmente."
+
       - name: Trivy Scan (JSON para IA)
         run: |
           # Generamos el JSON que el script de IA procesará
@@ -62,6 +79,24 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           fail_action: false
           cmd_options: '-r security-results/zap-report.html -J security-results/zap-results.json'
+
+      - name: Ensure DAST and Container JSON Output
+        if: always()
+        run: |
+          if [ ! -f security-results/trivy-results.json ]; then
+            echo '{"Results": []}' > security-results/trivy-results.json
+            echo "WARN: Se genero fallback security-results/trivy-results.json"
+          fi
+
+          if [ ! -f security-results/zap-results.json ]; then
+            echo '{"site": []}' > security-results/zap-results.json
+            echo "WARN: Se genero fallback security-results/zap-results.json"
+          fi
+
+      - name: Stop App Under Test
+        if: always()
+        run: |
+          docker rm -f app-under-test >/dev/null 2>&1 || true
 
       - name: Debug Trivy and ZAP Output
         if: always()

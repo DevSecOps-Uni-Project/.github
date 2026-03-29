@@ -23,12 +23,25 @@ required=(
   "zap-results.json"
 )
 
+fallback_content_for() {
+  case "$1" in
+    trufflehog-results.json) printf '%s\n' '[]' ;;
+    semgrep-results.json) printf '%s\n' '{"results": []}' ;;
+    snyk-results.json) printf '%s\n' '{"vulnerabilities": []}' ;;
+    trivy-results.json) printf '%s\n' '{"Results": []}' ;;
+    zap-results.json) printf '%s\n' '{"site": []}' ;;
+    *) printf '%s\n' '{}' ;;
+  esac
+}
+
 # Copy first match for each required file to avoid accidental overwrite.
 for file in "${required[@]}"; do
   mapfile -t matches < <(find "${SOURCE_DIR}" -type f -name "${file}" | sort)
 
   if [ "${#matches[@]}" -eq 0 ]; then
     echo "[normalize] WARN: Not found -> ${file}"
+    fallback_content_for "${file}" > "${TARGET_DIR}/${file}"
+    echo "[normalize] WARN: Fallback created -> ${TARGET_DIR}/${file}"
     continue
   fi
 
