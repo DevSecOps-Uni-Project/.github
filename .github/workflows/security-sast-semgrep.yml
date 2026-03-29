@@ -15,36 +15,49 @@ jobs:
       - name: Checkout Codigo
         uses: actions/checkout@v4
 
+      - name: Prepare Results Directory
+        run: |
+          mkdir -p security-results
+          echo "Workspace: $(pwd)"
+
       - name: Semgrep Scan (JSON para IA)
         run: |
           # Generamos JSON puro. Usamos la imagen oficial pero extraemos el archivo correctamente.
-          docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan \
+          docker run --rm -v $(pwd):/src -w /src returntocorp/semgrep semgrep scan \
             --config="p/default" \
             --config="p/security-audit" \
             --config="p/secrets" \
-            --json --output=semgrep-results.json || true
+            --json --output=security-results/semgrep-results.json || true
           
           # Ajustar permisos para que el Runner pueda leer el archivo generado por Docker
-          sudo chown $(id -u):$(id -g) semgrep-results.json
+          sudo chown $(id -u):$(id -g) security-results/semgrep-results.json || true
 
       - name: Semgrep Scan (SARIF para GitHub)
         run: |
-          docker run --rm -v $(pwd):/src returntocorp/semgrep semgrep scan \
+          docker run --rm -v $(pwd):/src -w /src returntocorp/semgrep semgrep scan \
             --config="p/default" \
-            --sarif --output=semgrep-results.sarif || true
+            --sarif --output=security-results/semgrep-results.sarif || true
           
-          sudo chown $(id -u):$(id -g) semgrep-results.sarif
+          sudo chown $(id -u):$(id -g) security-results/semgrep-results.sarif || true
+
+      - name: Debug Semgrep Output
+        if: always()
+        run: |
+          pwd
+          ls -la
+          ls -la security-results || true
 
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
-          sarif_file: semgrep-results.sarif
+          sarif_file: security-results/semgrep-results.sarif
 
       - name: Upload Semgrep Report (Artifact)
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: semgrep-report
-          path: semgrep-results.json
+          name: security-semgrep
+          path: security-results/semgrep-results.json
+          if-no-files-found: warn
           retention-days: 1

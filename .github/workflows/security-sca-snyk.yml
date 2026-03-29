@@ -19,6 +19,11 @@ jobs:
       - name: Checkout Codigo
         uses: actions/checkout@v4
 
+      - name: Prepare Results Directory
+        run: |
+          mkdir -p security-results
+          echo "Workspace: $(pwd)"
+
       - name: Validar SNYK_TOKEN
         run: |
           if [ -z "${{ secrets.SNYK_TOKEN }}" ]; then
@@ -36,17 +41,26 @@ jobs:
         run: |
           npm install -g snyk
           snyk auth ${{ secrets.SNYK_TOKEN }}
-          snyk test --file=pom.xml --json-file-output=snyk-results.json || true
-          snyk test --file=pom.xml --sarif-file-output=snyk.sarif || true
+          snyk test --file=pom.xml --json-file-output=security-results/snyk-results.json || true
+          snyk test --file=pom.xml --sarif-file-output=security-results/snyk.sarif || true
+
+      - name: Debug Snyk Output
+        if: always()
+        run: |
+          pwd
+          ls -la
+          ls -la security-results || true
 
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
+        if: always()
         with:
-          sarif_file: snyk.sarif
+          sarif_file: security-results/snyk.sarif
 
       - name: Upload Snyk Report
         uses: actions/upload-artifact@v4
         if: always() 
         with:
-          name: snyk-report
-          path: snyk-results.json
+          name: security-snyk
+          path: security-results/snyk-results.json
+          if-no-files-found: warn

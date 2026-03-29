@@ -20,8 +20,45 @@ jobs:
       - name: Download All Security Artifacts
         uses: actions/download-artifact@v4
         with:
-          path: security-results
-          merge-multiple: true 
+          path: downloaded-artifacts
+
+      - name: Debug Downloaded Artifacts
+        run: |
+          pwd
+          ls -la
+          echo "=== downloaded-artifacts tree ==="
+          find downloaded-artifacts -maxdepth 5 -type f -print || true
+
+      - name: Normalize Security Results
+        run: |
+          chmod +x governance-tools/scripts/normalize-security-results.sh
+          governance-tools/scripts/normalize-security-results.sh downloaded-artifacts security-results
+
+      - name: Validate Required JSON Files
+        run: |
+          required_files=(
+            "trufflehog-results.json"
+            "semgrep-results.json"
+            "snyk-results.json"
+            "trivy-results.json"
+            "zap-results.json"
+          )
+
+          missing=0
+          for file in "${required_files[@]}"; do
+            if [ ! -f "security-results/${file}" ]; then
+              echo "ERROR: Archivo requerido ausente -> security-results/${file}"
+              missing=1
+            fi
+          done
+
+          echo "=== security-results final ==="
+          ls -la security-results || true
+
+          if [ "$missing" -ne 0 ]; then
+            echo "Faltan resultados de seguridad obligatorios. Revisar jobs hijos y artifacts."
+            exit 1
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -36,6 +73,4 @@ jobs:
           CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp governance-tools/scripts/ia-triage.py security-results/
-          cd security-results
-          python ia-triage.py
+          python governance-tools/scripts/ia-triage.py security-results
