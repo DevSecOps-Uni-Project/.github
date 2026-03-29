@@ -120,18 +120,39 @@ class SecurityNormalizer:
 
     def call_claude_ai(self, phase, issues):
         api_key = os.environ.get("CLAUDE_API_KEY")
-        if not api_key: return "❌ Error: API Key no configurada."
+        if not api_key:
+            return "❌ Error: API Key no configurada."
+
         client = Anthropic(api_key=api_key)
         prompt = f"Analiza estos fallos críticos de seguridad en la fase {phase}: {json.dumps(issues)}"
-        try:
-            response = client.messages.create(
-                model="claude-3-5-sonnet-20240620",
-                max_tokens=2000,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            return response.content[0].text
-        except Exception as e:
-            return f"❌ Error en IA: {str(e)}"
+        requested_model = os.environ.get("CLAUDE_MODEL", "claude-3-5-sonnet-latest")
+        candidate_models = [
+            requested_model,
+            "claude-3-5-sonnet-latest",
+            "claude-3-5-sonnet-20240620",
+        ]
+
+        # Eliminar duplicados preservando el orden
+        seen = set()
+        models = []
+        for model in candidate_models:
+            if model and model not in seen:
+                models.append(model)
+                seen.add(model)
+
+        errors = []
+        for model in models:
+            try:
+                response = client.messages.create(
+                    model=model,
+                    max_tokens=2000,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                return response.content[0].text
+            except Exception as e:
+                errors.append(f"{model}: {str(e)}")
+
+        return "❌ Error en IA: " + " | ".join(errors)
 
 def main():
     results_path = sys.argv[1] if len(sys.argv) > 1 else 'security-results'

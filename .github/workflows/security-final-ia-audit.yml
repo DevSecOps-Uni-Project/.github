@@ -75,11 +75,40 @@ jobs:
       - name: Install AI Engine
         run: pip install --no-cache-dir anthropic
 
+      - name: Debug AI Configuration
+        env:
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
+        run: |
+          if [ -n "${CLAUDE_API_KEY:-}" ]; then
+            echo "CLAUDE_API_KEY detectada (longitud: ${#CLAUDE_API_KEY})"
+          else
+            echo "CLAUDE_API_KEY ausente"
+          fi
+
+          if [ -n "${CLAUDE_MODEL:-}" ]; then
+            echo "CLAUDE_MODEL configurado: ${CLAUDE_MODEL}"
+          else
+            echo "CLAUDE_MODEL no configurado. Se usara fallback del script."
+          fi
+
       - name: Run IA Triage Mentor
         env:
           CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
         run: |
+          if [ -z "${CLAUDE_API_KEY:-}" ]; then
+            echo "WARN: CLAUDE_API_KEY no esta configurada. Se omite la fase de IA y el pipeline continua."
+            if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+              {
+                echo "# 🤖 Reporte de Auditoría IA"
+                echo "⚠️ IA omitida: CLAUDE_API_KEY no configurada."
+              } >> "${GITHUB_STEP_SUMMARY}"
+            fi
+            exit 0
+          fi
+
           if [ -f scripts/ia-triage.py ]; then
             TRIAGE_SCRIPT="scripts/ia-triage.py"
           elif [ -f governance-tools/scripts/ia-triage.py ]; then
@@ -101,6 +130,13 @@ jobs:
             echo "AI triage completado: se detectaron hallazgos."
             echo "No se falla el job por hallazgos; la decision de bloqueo queda al pipeline principal."
           else
-            echo "ERROR: AI triage no pudo ejecutarse correctamente (exit ${TRIAGE_EXIT_CODE})."
-            exit "${TRIAGE_EXIT_CODE}"
+            echo "WARN: AI triage no pudo ejecutarse correctamente (exit ${TRIAGE_EXIT_CODE})."
+            echo "Se continua el pipeline para no bloquear por un problema operativo de IA."
+            if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+              {
+                echo "# 🤖 Reporte de Auditoría IA"
+                echo "⚠️ IA con error operativo (exit ${TRIAGE_EXIT_CODE}). Revisar token/API o disponibilidad del proveedor."
+              } >> "${GITHUB_STEP_SUMMARY}"
+            fi
+            exit 0
           fi
