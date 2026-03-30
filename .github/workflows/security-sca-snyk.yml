@@ -43,8 +43,14 @@ jobs:
         run: |
           npm install -g snyk@latest
           snyk auth ${{ secrets.SNYK_TOKEN }}
-          snyk test --file=pom.xml --json-file-output=security-results/snyk-results.json || true
-          snyk test --file=pom.xml --sarif-file-output=security-results/snyk.sarif || true
+          snyk test \
+            --file=pom.xml \
+            --org=${{ vars.SNYK_ORG }} \
+            --json-file-output=security-results/snyk-results.json || true
+          snyk test \
+            --file=pom.xml \
+            --org=${{ vars.SNYK_ORG }} \
+            --sarif-file-output=security-results/snyk.sarif || true
 
           if [ ! -s security-results/snyk-results.json ]; then
             echo "⚠️ Snyk no generó resultados. Se crea fallback."
