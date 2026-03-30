@@ -35,13 +35,26 @@ jobs:
 
     - name: Prepare Results Directory
       run: mkdir -p security-results
-  
+
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
       with:
         category: "/language:java-kotlin"
-        output: security-results/codeql-results.sarif
         upload: true
+
+    # 🔍 Buscar y normalizar el SARIF
+    - name: Normalize CodeQL SARIF
+      if: always()
+      run: |
+        FILE=$(find . -name "*.sarif" | head -n 1)
+
+        if [ -z "$FILE" ]; then
+          echo "❌ No se encontró archivo SARIF"
+          exit 0
+        fi
+
+        echo "Archivo encontrado: $FILE"
+        cp "$FILE" security-results/codeql-results.sarif
 
     - name: Upload CodeQL Artifact
       uses: actions/upload-artifact@v4
@@ -50,39 +63,32 @@ jobs:
         name: codeql-report
         path: security-results/codeql-results.sarif
         if-no-files-found: warn
-    
+
     - name: Debug CodeQL Output
       if: always()
       run: |
         ls -la security-results || true
-    
+
     - name: Conteo de hallazgos CodeQL
       if: always()
       run: |
-        DIR="security-results/codeql-results.sarif"
+        FILE="security-results/codeql-results.sarif"
 
-        if [ ! -d "$DIR" ]; then
-          echo "❌ No se encontró directorio SARIF"
+        if [ ! -f "$FILE" ]; then
+          echo "❌ No existe el archivo SARIF"
           exit 0
         fi
 
-        FILE=$(find "$DIR" -name "*.sarif" | head -n 1)
+        echo "Archivo usado: $FILE"
 
-        if [ -z "$FILE" ]; then
-          echo "❌ No se encontró archivo SARIF dentro del directorio"
-          exit 0
-        fi
+        TOTAL=$(jq '[.runs[].results[]?] | length' "$FILE")
 
-        echo "Archivo encontrado: $FILE"
-
-        TOTAL=$(jq '[.runs[].results[]?] | length' "$FILE" 2>/dev/null || echo 0)
-
-        CRITICAL_HIGH=$(jq '[.runs[].results[]? | select(.level=="error")] | length' "$FILE" 2>/dev/null || echo 0)
-        MEDIUM=$(jq '[.runs[].results[]? | select(.level=="warning")] | length' "$FILE" 2>/dev/null || echo 0)
-        LOW=$(jq '[.runs[].results[]? | select(.level=="note")] | length' "$FILE" 2>/dev/null || echo 0)
+        HIGH=$(jq '[.runs[].results[]? | select(.level=="error")] | length' "$FILE")
+        MEDIUM=$(jq '[.runs[].results[]? | select(.level=="warning")] | length' "$FILE")
+        LOW=$(jq '[.runs[].results[]? | select(.level=="note")] | length' "$FILE")
 
         echo "=== CodeQL Findings ==="
         echo "Total: $TOTAL"
-        echo "Critical/High: $CRITICAL_HIGH"
+        echo "High: $HIGH"
         echo "Medium: $MEDIUM"
         echo "Low: $LOW"
