@@ -11,7 +11,6 @@ jobs:
     permissions:
       contents: read
       security-events: read
-      dependabot-alerts: read
 
     steps:
       - name: Checkout Codigo
