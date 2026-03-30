@@ -37,6 +37,7 @@ jobs:
       uses: github/codeql-action/analyze@v3
       with:
         category: "/language:java-kotlin"
+        output: security-results/codeql-results.sarif
         upload: true
 
     - name: Export CodeQL Results for IA (opcional)
