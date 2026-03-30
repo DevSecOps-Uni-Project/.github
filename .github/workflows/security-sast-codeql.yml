@@ -59,10 +59,17 @@ jobs:
     - name: Conteo de hallazgos CodeQL
       if: always()
       run: |
-        FILE="security-results/codeql-results.sarif"
+        DIR="security-results/codeql-results.sarif"
 
-        if [ ! -f "$FILE" ]; then
-          echo "❌ No se encontró archivo SARIF"
+        if [ ! -d "$DIR" ]; then
+          echo "❌ No se encontró directorio SARIF"
+          exit 0
+        fi
+
+        FILE=$(find "$DIR" -name "*.sarif" | head -n 1)
+
+        if [ -z "$FILE" ]; then
+          echo "❌ No se encontró archivo SARIF dentro del directorio"
           exit 0
         fi
 
@@ -70,5 +77,12 @@ jobs:
 
         TOTAL=$(jq '[.runs[].results[]?] | length' "$FILE" 2>/dev/null || echo 0)
 
+        CRITICAL_HIGH=$(jq '[.runs[].results[]? | select(.level=="error")] | length' "$FILE" 2>/dev/null || echo 0)
+        MEDIUM=$(jq '[.runs[].results[]? | select(.level=="warning")] | length' "$FILE" 2>/dev/null || echo 0)
+        LOW=$(jq '[.runs[].results[]? | select(.level=="note")] | length' "$FILE" 2>/dev/null || echo 0)
+
         echo "=== CodeQL Findings ==="
         echo "Total: $TOTAL"
+        echo "Critical/High: $CRITICAL_HIGH"
+        echo "Medium: $MEDIUM"
+        echo "Low: $LOW"
