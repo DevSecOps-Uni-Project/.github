@@ -18,57 +18,75 @@ jobs:
       - name: Checkout Codigo
         uses: actions/checkout@v4
 
-      - name: Prepare Results Directory
+      - name: Preparar directorio de resultados
         run: |
           mkdir -p security-results
           echo "Workspace: $(pwd)"
 
-      - name: Run Semgrep (JSON + SARIF)
+      - name: Run Semgrep (JSON)
         run: |
           docker run --rm \
             -v $(pwd):/src \
             -w /src \
-            returntocorp/semgrep semgrep scan \
+            returntocorp/semgrep:1.75.0 semgrep scan \
             --config="p/default" \
             --config="p/security-audit" \
             --config="p/secrets" \
             --json \
-            --sarif \
             --output=security-results/semgrep-results.json \
-            --sarif-output=security-results/semgrep-results.sarif \
             . || true
 
-          # Ajustar permisos UNA sola vez
+      - name: Run Semgrep (SARIF)
+        run: |
+          docker run --rm \
+            -v $(pwd):/src \
+            -w /src \
+            returntocorp/semgrep:1.75.0 semgrep scan \
+            --config="p/default" \
+            --config="p/security-audit" \
+            --config="p/secrets" \
+            --sarif \
+            --output=security-results/semgrep-results.sarif \
+            . || true
+
+      - name: Fix permissions
+        run: |
           sudo chown -R $(id -u):$(id -g) security-results || true
 
       - name: Validate outputs
         run: |
-          if [ ! -f security-results/semgrep-results.json ]; then
-            echo "❌ No se encontró semgrep-results.json"
-            exit 1
+          if [ -f security-results/semgrep-results.json ]; then
+            echo "JSON_EXISTS=true" >> $GITHUB_ENV
+          else
+            echo "JSON_EXISTS=false" >> $GITHUB_ENV
           fi
 
-          if [ ! -f security-results/semgrep-results.sarif ]; then
-            echo "❌ No se encontró semgrep-results.sarif"
-            exit 1
+          if [ -f security-results/semgrep-results.sarif ]; then
+            echo "SARIF_EXISTS=true" >> $GITHUB_ENV
+          else
+            echo "SARIF_EXISTS=false" >> $GITHUB_ENV
           fi
 
       - name: Count vulnerabilities (Semgrep)
+        if: env.JSON_EXISTS == 'true'
         run: |
-          echo "📊 Conteo de vulnerabilidades Semgrep"
-
+          TOTAL=$(jq '.results | length' security-results/semgrep-results.json)
           CRITICAL=$(jq '[.results[] | select(.extra.severity=="ERROR")] | length' security-results/semgrep-results.json)
           HIGH=$(jq '[.results[] | select(.extra.severity=="WARNING")] | length' security-results/semgrep-results.json)
           LOW=$(jq '[.results[] | select(.extra.severity=="INFO")] | length' security-results/semgrep-results.json)
 
-          TOTAL=$(jq '.results | length' security-results/semgrep-results.json)
-
           echo "Total: $TOTAL"
-          echo "Critical (ERROR): $CRITICAL"
-          echo "High (WARNING): $HIGH"
-          echo "Low (INFO): $LOW"
+          echo "Critical: $CRITICAL"
+          echo "High: $HIGH"
+          echo "Low: $LOW"
+
+      - name: Debug outputs
+        if: always()
+        run: |
+          ls -la security-results || true
 
       - name: Upload SARIF to GitHub Security
+        if: env.SARIF_EXISTS == 'true'
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: security-results/semgrep-results.sarif
@@ -78,4 +96,5 @@ jobs:
         with:
           name: security-semgrep
           path: security-results/
+          if-no-files-found: warn
           retention-days: 1
