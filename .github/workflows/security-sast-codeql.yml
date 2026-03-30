@@ -51,17 +51,24 @@ jobs:
         path: security-results/codeql-results.sarif
         if-no-files-found: warn
     
+    - name: Debug CodeQL Output
+      if: always()
+      run: |
+        ls -la security-results || true
+    
     - name: Conteo de hallazgos CodeQL
       if: always()
       run: |
         FILE="security-results/codeql-results.sarif"
 
-        if [ -z "$FILE" ]; then
+        if [ ! -f "$FILE" ]; then
           echo "❌ No se encontró archivo SARIF"
           exit 0
         fi
 
-        TOTAL=$(jq '[.runs[].results[]?] | length' "$FILE")
+        echo "Archivo encontrado: $FILE"
+
+        TOTAL=$(jq '[.runs[].results[]?] | length' "$FILE" 2>/dev/null || echo 0)
 
         echo "=== CodeQL Findings ==="
         echo "Total: $TOTAL"
