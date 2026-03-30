@@ -47,7 +47,13 @@ jobs:
             --file=pom.xml \
             --json-file-output=security-results/snyk-results.json \
             --sarif-file-output=security-results/snyk.sarif \
+            --severity-threshold=low \
+            --fail-on=all \
+            --org=${{ vars.SNYK_ORG }} \
             || true
+
+          COUNT=$(jq '.vulnerabilities | length' security-results/snyk-results.json)
+          echo "Snyk findings detectados: $COUNT"
 
           if [ ! -s security-results/snyk-results.json ]; then
             echo "⚠️ Snyk no generó resultados. Se crea fallback."
