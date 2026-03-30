@@ -66,8 +66,11 @@ jobs:
     uses: ./.github/workflows/security-sbom.yml
     with:
       java-version: ${{ inputs.java-version }}
-    secrets:
-      DTRACK_API_KEY: ${{ secrets.DTRACK_API_KEY }}
+  
+  dependabot-scan:
+    name: "Orquestacion - Dependabot"
+    needs: secrets-audit
+    uses: ./.github/workflows/security-dependabot.yml
 
   # FASE 3: ANÁLISIS DINÁMICO (DAST) Y CONTENEDORES
   # Se ejecuta después de que el análisis estático no encuentre bloqueos críticos inmediatos
@@ -83,7 +86,15 @@ jobs:
   final-audit:
     name: "Orquestacion - Mentor de IA"
     # IMPORTANTE: Espera a TODOS los jobs para recolectar todos los archivos JSON/SARIF
-    needs: [secrets-audit, sast-semgrep, sast-codeql, dependency-scan, container-and-dast] 
+    needs: [
+      secrets-audit,
+      sast-semgrep,
+      sast-codeql,
+      dependency-scan,
+      dependabot-scan,
+      sbom-inventory,
+      container-and-dast
+    ]
     if: always() # Se ejecuta aunque los anteriores fallen para que la IA explique por qué fallaron
     uses: ./.github/workflows/security-final-ia-audit.yml 
     secrets:

@@ -1,0 +1,86 @@
+name: "Security - Dependabot Alerts"
+
+on:
+  workflow_call:
+
+jobs:
+  dependabot-scan:
+    name: "Dependabot Vulnerability Scan"
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      security-events: read
+
+    steps:
+      - name: Checkout Codigo
+        uses: actions/checkout@v4
+
+      - name: Preparar directorio de resultados
+        run: mkdir -p security-results
+
+      - name: Obtener alerts de Dependabot (JSON crudo)
+        run: |
+          curl -s \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/dependabot/alerts?per_page=100" \
+            > security-results/dependabot-results.json
+
+      - name: Validar JSON generado
+        run: |
+          if [ ! -f security-results/dependabot-results.json ]; then
+            echo "❌ No se generó dependabot-results.json"
+            exit 1
+          fi
+
+          jq empty security-results/dependabot-results.json
+
+      - name: Normalizar resultados
+        run: |
+          jq '[
+            .[] | {
+              package: .dependency.package.name,
+              ecosystem: .dependency.package.ecosystem,
+              severity: .security_advisory.severity,
+              cve: .security_advisory.cve_id,
+              summary: .security_advisory.summary,
+              fixed_version: (.security_vulnerability.first_patched_version.identifier // "none")
+            }
+          ]' security-results/dependabot-results.json \
+          > security-results/dependabot-normalized.json
+
+      - name: Validar normalización
+        run: |
+          jq empty security-results/dependabot-normalized.json
+
+      - name: Conteo de vulnerabilidades (Dependabot)
+        run: |
+          TOTAL=$(jq 'length' security-results/dependabot-normalized.json)
+          CRITICAL=$(jq '[.[] | select(.severity=="critical")] | length' security-results/dependabot-normalized.json)
+          HIGH=$(jq '[.[] | select(.severity=="high")] | length' security-results/dependabot-normalized.json)
+          MEDIUM=$(jq '[.[] | select(.severity=="medium")] | length' security-results/dependabot-normalized.json)
+          LOW=$(jq '[.[] | select(.severity=="low")] | length' security-results/dependabot-normalized.json)
+
+          echo "Dependabot Total: $TOTAL"
+          echo "Critical: $CRITICAL"
+          echo "High: $HIGH"
+          echo "Medium: $MEDIUM"
+          echo "Low: $LOW"
+
+      - name: Debug Dependabot Output
+        if: always()
+        run: |
+          echo "===== RAW STRUCTURE ====="
+          jq 'keys' security-results/dependabot-results.json
+
+          echo "===== NORMALIZED SAMPLE ====="
+          jq '.[0:5]' security-results/dependabot-normalized.json
+
+      - name: Upload Dependabot Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-dependabot
+          path: security-results/dependabot-*.json
+          if-no-files-found: warn
+          retention-days: 1
