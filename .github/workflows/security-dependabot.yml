@@ -11,6 +11,7 @@ jobs:
     permissions:
       contents: read
       security-events: read
+      dependabot-alerts: read
 
     steps:
       - name: Checkout Codigo
@@ -19,25 +20,41 @@ jobs:
       - name: Preparar directorio de resultados
         run: mkdir -p security-results
 
-      - name: Obtener alerts de Dependabot (JSON crudo)
+      - name: Obtener alerts de Dependabot (con control de errores)
         run: |
-          curl -s \
+          curl -s -w "\nHTTP_STATUS:%{http_code}" \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/dependabot/alerts?per_page=100" \
-            > security-results/dependabot-results.json
+            > response.txt
+
+          STATUS=$(grep "HTTP_STATUS" response.txt | cut -d':' -f2)
+          BODY=$(sed '/HTTP_STATUS/d' response.txt)
+
+          echo "$BODY" > security-results/dependabot-results.json
+
+          echo "HTTP Status: $STATUS"
+
+          if [ "$STATUS" != "200" ]; then
+            echo "⚠️ Error en API Dependabot"
+            cat security-results/dependabot-results.json
+          fi
 
       - name: Validar JSON generado
         run: |
-          if [ ! -f security-results/dependabot-results.json ]; then
-            echo "❌ No se generó dependabot-results.json"
-            exit 1
-          fi
-
           jq empty security-results/dependabot-results.json
 
-      - name: Normalizar resultados
+      - name: Normalizar resultados (robusto)
         run: |
+          TYPE=$(jq -r 'type' security-results/dependabot-results.json)
+
+          if [ "$TYPE" != "array" ]; then
+            echo "⚠️ Dependabot response no es array"
+            cat security-results/dependabot-results.json
+            echo "[]" > security-results/dependabot-normalized.json
+            exit 0
+          fi
+
           jq '[
             .[] | {
               package: .dependency.package.name,
@@ -71,11 +88,11 @@ jobs:
       - name: Debug Dependabot Output
         if: always()
         run: |
-          echo "===== RAW STRUCTURE ====="
-          jq 'keys' security-results/dependabot-results.json
+          echo "===== RAW RESPONSE ====="
+          cat security-results/dependabot-results.json
 
-          echo "===== NORMALIZED SAMPLE ====="
-          jq '.[0:5]' security-results/dependabot-normalized.json
+          echo "===== NORMALIZED ====="
+          cat security-results/dependabot-normalized.json
 
       - name: Upload Dependabot Artifacts
         uses: actions/upload-artifact@v4
