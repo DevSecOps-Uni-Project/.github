@@ -48,7 +48,7 @@ jobs:
           # Generamos el JSON que el script de IA procesará
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $(pwd):/src \
             aquasec/trivy:0.49.1 image --format json --output /src/security-results/trivy-results.json \
-            --severity CRITICAL,HIGH ${{ inputs.image-name }}:test
+            --severity CRITICAL,HIGH,MEDIUM,LOW ${{ inputs.image-name }}:test
           
           # Corregir permisos del archivo generado por Docker
           sudo chown $(id -u):$(id -g) security-results/trivy-results.json || true
