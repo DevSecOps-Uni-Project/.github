@@ -33,17 +33,15 @@ jobs:
     - name: Build project
       run: mvn clean install -DskipTests
 
+    - name: Prepare Results Directory
+      run: mkdir -p security-results
+  
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
       with:
         category: "/language:java-kotlin"
         output: security-results/codeql-results.sarif
         upload: true
-
-    - name: Export CodeQL Results for IA (opcional)
-      run: |
-        mkdir -p security-results
-        find . -name "*.sarif" -exec cp {} security-results/codeql-results.sarif \; || true
 
     - name: Upload CodeQL Artifact
       uses: actions/upload-artifact@v4
@@ -56,7 +54,7 @@ jobs:
     - name: Conteo de hallazgos CodeQL
       if: always()
       run: |
-        FILE=$(find . -name "*.sarif" | head -n 1)
+        FILE="security-results/codeql-results.sarif"
 
         if [ -z "$FILE" ]; then
           echo "❌ No se encontró archivo SARIF"
