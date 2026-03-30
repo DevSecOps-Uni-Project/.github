@@ -14,37 +14,64 @@ jobs:
   sbom-generation:
     name: "3.5 Inventario SBOM"
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Codigo
         uses: actions/checkout@v4
+
+      - name: Preparar directorio
+        run: mkdir -p security-results
 
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           java-version: ${{ inputs.java-version }}
           distribution: 'temurin'
-          cache: 'maven' 
+          cache: 'maven'
 
-      - name: Generar SBOM
-        run: mvn org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom -Dcyclonedx.skipAttach=true
+      - name: Generar SBOM (CycloneDX)
+        run: |
+          mvn -B org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom \
+            -Dcyclonedx.skipAttach=true
+
+          cp target/bom.json security-results/sbom.json
+
+      - name: Validar SBOM
+        run: |
+          if [ ! -f security-results/sbom.json ]; then
+            echo "❌ No se generó SBOM"
+            exit 1
+          fi
+
+      - name: Validar estructura JSON
+        run: |
+          jq empty security-results/sbom.json
+
+      - name: Conteo de componentes
+        run: |
+          echo "📊 SBOM Metrics"
+
+          TOTAL_COMPONENTS=$(jq '.components | length' security-results/sbom.json)
+
+          echo "Total Components: $TOTAL_COMPONENTS"
 
       - name: Enviar a Dependency-Track
-        continue-on-error: true 
+        continue-on-error: true
         run: |
           DTRACK_URL="https://prepositional-undistantly-jestine.ngrok-free.dev/api/v1/bom"
-          
-          curl -X "POST" "$DTRACK_URL" \
-               -H "Content-Type: multipart/form-data" \
-               -H "X-Api-Key: ${{ secrets.DTRACK_API_KEY }}" \
-               -H "ngrok-skip-browser-warning: true" \
-               -F "projectName=${{ github.event.repository.name }}" \
-               -F "projectVersion=main" \
-               -F "autoCreate=true" \
-               -F "bom=@target/bom.json"
+
+          curl -X POST "$DTRACK_URL" \
+            -H "Content-Type: multipart/form-data" \
+            -H "X-Api-Key: ${{ secrets.DTRACK_API_KEY }}" \
+            -H "ngrok-skip-browser-warning: true" \
+            -F "projectName=${{ github.event.repository.name }}" \
+            -F "projectVersion=main" \
+            -F "autoCreate=true" \
+            -F "bom=@security-results/sbom.json"
 
       - name: Upload SBOM Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: project-sbom
-          path: target/bom.json
+          name: security-sbom
+          path: security-results/sbom.json
           retention-days: 5
