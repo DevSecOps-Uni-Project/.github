@@ -28,8 +28,9 @@ jobs:
           docker run --rm \
             -v $(pwd):/src \
             -w /src \
-            returntocorp/semgrep:1.75.0 semgrep scan \
-            --config="p/default" \
+            returntocorp/semgrep:1.76.0 semgrep scan \
+            --config="p/java" \
+            --config="p/owasp-top-ten" \
             --config="p/security-audit" \
             --config="p/secrets" \
             --json \
@@ -41,8 +42,9 @@ jobs:
           docker run --rm \
             -v $(pwd):/src \
             -w /src \
-            returntocorp/semgrep:1.75.0 semgrep scan \
-            --config="p/default" \
+            returntocorp/semgrep:1.76.0 semgrep scan \
+            --config="p/java" \
+            --config="p/owasp-top-ten" \
             --config="p/security-audit" \
             --config="p/secrets" \
             --sarif \
@@ -98,6 +100,7 @@ jobs:
           path: security-results/
           if-no-files-found: warn
           retention-days: 1
+
       - name: Debug Semgrep JSON
         if: env.JSON_EXISTS == 'true'
         run: |
