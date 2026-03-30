@@ -1,7 +1,11 @@
 import json
 import os
 import sys
-from anthropic import Anthropic
+
+try:
+    from anthropic import Anthropic
+except ImportError:
+    Anthropic = None
 
 class SecurityNormalizer:
     def __init__(self, results_dir='security-results'):
@@ -119,6 +123,9 @@ class SecurityNormalizer:
         return None, []
 
     def call_claude_ai(self, phase, issues):
+        if Anthropic is None:
+            return "❌ Error: dependencia 'anthropic' no instalada."
+
         api_key = os.environ.get("CLAUDE_API_KEY")
         if not api_key:
             return "❌ Error: API Key no configurada."

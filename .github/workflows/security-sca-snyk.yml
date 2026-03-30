@@ -14,7 +14,7 @@ jobs:
   dependency-scan:
     name: "3. SCA (Snyk)"
     runs-on: ubuntu-latest
-    continue-on-error: true
+    continue-on-error: false
     steps:
       - name: Checkout Codigo
         uses: actions/checkout@v4
@@ -27,7 +27,7 @@ jobs:
       - name: Validar SNYK_TOKEN
         run: |
           if [ -z "${{ secrets.SNYK_TOKEN }}" ]; then
-            echo "SNYK_TOKEN no esta configurado o llego vacio en el caller."
+            echo "SNYK_TOKEN no configurado"
             exit 1
           fi
 
