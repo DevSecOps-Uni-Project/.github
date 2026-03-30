@@ -98,3 +98,17 @@ jobs:
           path: security-results/
           if-no-files-found: warn
           retention-days: 1
+      - name: Debug Semgrep JSON
+        if: env.JSON_EXISTS == 'true'
+        run: |
+          echo "===== STRUCTURE ====="
+          jq 'keys' security-results/semgrep-results.json
+
+          echo "===== RESULTS ====="
+          jq '.results' security-results/semgrep-results.json
+
+          echo "===== ERRORS ====="
+          jq '.errors' security-results/semgrep-results.json
+
+          echo "===== STATS ====="
+          jq '.stats' security-results/semgrep-results.json
