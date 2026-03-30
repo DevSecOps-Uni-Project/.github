@@ -7,10 +7,13 @@ jobs:
   sast-semgrep:
     name: "2. SAST (Semgrep)"
     runs-on: ubuntu-latest
+
     permissions:
       security-events: write
       contents: read
+
     continue-on-error: true
+
     steps:
       - name: Checkout Codigo
         uses: actions/checkout@v4
@@ -20,44 +23,59 @@ jobs:
           mkdir -p security-results
           echo "Workspace: $(pwd)"
 
-      - name: Semgrep Scan (JSON para IA)
+      - name: Run Semgrep (JSON + SARIF)
         run: |
-          # Generamos JSON puro. Usamos la imagen oficial pero extraemos el archivo correctamente.
-          docker run --rm -v $(pwd):/src -w /src returntocorp/semgrep semgrep scan \
+          docker run --rm \
+            -v $(pwd):/src \
+            -w /src \
+            returntocorp/semgrep semgrep scan \
             --config="p/default" \
             --config="p/security-audit" \
             --config="p/secrets" \
-            --json --output=security-results/semgrep-results.json || true
-          
-          # Ajustar permisos para que el Runner pueda leer el archivo generado por Docker
-          sudo chown $(id -u):$(id -g) security-results/semgrep-results.json || true
+            --json \
+            --sarif \
+            --output=security-results/semgrep-results.json \
+            --sarif-output=security-results/semgrep-results.sarif \
+            . || true
 
-      - name: Semgrep Scan (SARIF para GitHub)
-        run: |
-          docker run --rm -v $(pwd):/src -w /src returntocorp/semgrep semgrep scan \
-            --config="p/default" \
-            --sarif --output=security-results/semgrep-results.sarif || true
-          
-          sudo chown $(id -u):$(id -g) security-results/semgrep-results.sarif || true
+          # Ajustar permisos UNA sola vez
+          sudo chown -R $(id -u):$(id -g) security-results || true
 
-      - name: Debug Semgrep Output
-        if: always()
+      - name: Validate outputs
         run: |
-          pwd
-          ls -la
-          ls -la security-results || true
+          if [ ! -f security-results/semgrep-results.json ]; then
+            echo "❌ No se encontró semgrep-results.json"
+            exit 1
+          fi
+
+          if [ ! -f security-results/semgrep-results.sarif ]; then
+            echo "❌ No se encontró semgrep-results.sarif"
+            exit 1
+          fi
+
+      - name: Count vulnerabilities (Semgrep)
+        run: |
+          echo "📊 Conteo de vulnerabilidades Semgrep"
+
+          CRITICAL=$(jq '[.results[] | select(.extra.severity=="ERROR")] | length' security-results/semgrep-results.json)
+          HIGH=$(jq '[.results[] | select(.extra.severity=="WARNING")] | length' security-results/semgrep-results.json)
+          LOW=$(jq '[.results[] | select(.extra.severity=="INFO")] | length' security-results/semgrep-results.json)
+
+          TOTAL=$(jq '.results | length' security-results/semgrep-results.json)
+
+          echo "Total: $TOTAL"
+          echo "Critical (ERROR): $CRITICAL"
+          echo "High (WARNING): $HIGH"
+          echo "Low (INFO): $LOW"
 
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
         with:
           sarif_file: security-results/semgrep-results.sarif
 
-      - name: Upload Semgrep Report (Artifact)
+      - name: Upload Semgrep Artifacts
         uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: security-semgrep
-          path: security-results/semgrep-results.json
-          if-no-files-found: warn
+          path: security-results/
           retention-days: 1
