@@ -35,22 +35,28 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Verificación de la API Key
+          # 1. Verificación de la API Key
           if [ -z "${GEMINI_API_KEY:-}" ]; then
             echo "❌ ERROR: GEMINI_API_KEY no configurada. La auditoría IA es obligatoria."
             exit 1
           fi
 
-          # Localizar el script de auditoría que creamos anteriormente
-          if [ -f .github/scripts/gemini_auditor.py ]; then
+          # 2. Localizar el script en la ruta corregida (scripts/ en lugar de .github/scripts/)
+          if [ -f scripts/gemini_auditor.py ]; then
+            AUDITOR_SCRIPT="scripts/gemini_auditor.py"
+          elif [ -f .github/scripts/gemini_auditor.py ]; then
             AUDITOR_SCRIPT=".github/scripts/gemini_auditor.py"
           else
-            echo "❌ ERROR: No se encontró .github/scripts/gemini_auditor.py"
+            echo "❌ ERROR: No se encontró gemini_auditor.py en scripts/ ni en .github/scripts/"
+            # Listamos el directorio para debuggear en el log si vuelve a fallar
+            ls -R
             exit 1
           fi
 
-          echo "🚀 Iniciando Auditoría con Gemini..."
-          # Ejecutamos el script. Este generará el archivo REPORTE_IA_SEGURIDAD.md
+          echo "🚀 Usando script en: ${AUDITOR_SCRIPT}"
+          echo "🚀 Iniciando Auditoría con Gemini 1.5 Flash..."
+          
+          # 3. Ejecución del motor de IA
           python "${AUDITOR_SCRIPT}"
 
       # Publicamos el reporte en el resumen del Job de GitHub (Summary)
