@@ -104,6 +104,7 @@ jobs:
       contents: read
       pull-requests: write
       security-events: read
+      actions: read
     uses: ./.github/workflows/security-final-ia-audit.yml 
     secrets:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
