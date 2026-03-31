@@ -15,19 +15,19 @@ jobs:
       pull-requests: write 
       security-events: read
     steps:
-      # 1. Descargamos el código del repo que lanzó el pipeline (Backend)
+      # 1. Descargamos el código del repo que lanzó el pipeline
       - name: Checkout Application Repository
         uses: actions/checkout@v4
 
-      # 2. Descargamos el repo de GOBERNANZA (donde vive el script .py)
+      # 2. Descargamos el repo de GOBERNANZA
       - name: Checkout Governance Tools
         uses: actions/checkout@v4
         with:
-          repository: DevSecOps-Uni-Project/.github # Tu repo central
-          path: governance-tools # Lo ponemos en una carpeta aparte
+          repository: DevSecOps-Uni-Project/.github
+          path: governance-tools
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # 3. Descargamos los reportes de seguridad (SARIF/JSON)
+      # 3. Descargamos los reportes de seguridad
       - name: Download All Security Artifacts
         uses: actions/download-artifact@v4
         with:
@@ -39,11 +39,12 @@ jobs:
         with:
           python-version: '3.10'
 
+      # CORRECCIÓN DE DEPENDENCIAS: Instalamos el nuevo SDK (google-genai)
       - name: Install AI Engine Dependencies
         run: |
           python -m pip install --upgrade pip
           pip uninstall -y google-generativeai google-api-core || true
-          pip install google-genai
+          pip install -U google-genai
 
       - name: Run IA Triage & Remediation
         env:
@@ -55,19 +56,22 @@ jobs:
             exit 1
           fi
 
-          # AJUSTE DE RUTA: Ahora buscamos dentro de la carpeta de gobernanza
-          if [ -f governance-tools/scripts/gemini_auditor.py ]; then
+          # Validamos la ruta del script en la carpeta de gobernanza
+          # Nota: Asegúrate de que el nombre del archivo en tu repo sea exactamente ia-triage.py
+          if [ -f governance-tools/scripts/ia-triage.py ]; then
+            AUDITOR_SCRIPT="governance-tools/scripts/ia-triage.py"
+          elif [ -f governance-tools/scripts/gemini_auditor.py ]; then
             AUDITOR_SCRIPT="governance-tools/scripts/gemini_auditor.py"
           else
-            echo "❌ ERROR: No se encontró el script en governance-tools/scripts/gemini_auditor.py"
-            ls -R governance-tools # Debug para ver dónde quedó el archivo
+            echo "❌ ERROR: No se encontró el script de auditoría."
+            ls -R governance-tools/scripts
             exit 1
           fi
 
-          echo "🚀 Usando script centralizado de Gobernanza..."
+          echo "🚀 Ejecutando auditoría con ${AUDITOR_SCRIPT}..."
           python "${AUDITOR_SCRIPT}"
 
-      # 4. Publicación de resultados (Igual que antes)
+      # 4. Publicación de resultados
       - name: Publish Report to Job Summary
         if: always()
         run: |
