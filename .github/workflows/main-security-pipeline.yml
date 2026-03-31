@@ -15,7 +15,7 @@ on:
     secrets:
       SNYK_TOKEN:
         required: false
-      CLAUDE_API_KEY: 
+      GEMINI_API_KEY: 
         required: true
       DTRACK_API_KEY:
         required: false
@@ -99,7 +99,7 @@ jobs:
       sbom-inventory,
       container-and-dast
     ]
-    if: always() # Se ejecuta aunque los anteriores fallen para que la IA explique por qué fallaron
+    if: always()
     uses: ./.github/workflows/security-final-ia-audit.yml 
     secrets:
-      CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

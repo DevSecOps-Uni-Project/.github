@@ -1,193 +1,81 @@
-name: "Security - Final AI Audit"
+name: "Security - Final AI Audit (Gemini)"
 
 on:
   workflow_call:
     secrets:
-      CLAUDE_API_KEY:
+      GEMINI_API_KEY:
         required: true
 
 jobs:
   ai-triage:
-    name: "AI Security Mentor"
+    name: "AI Security Mentor & Remediator"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Checkout Governance Tools
-        uses: actions/checkout@v4
-        with:
-          repository: DevSecOps-Uni-Project/.github
-          path: governance-tools
-
+      # Descargamos todos los artefactos de las fases anteriores
       - name: Download All Security Artifacts
         uses: actions/download-artifact@v4
         with:
-          path: downloaded-artifacts
-
-      - name: Debug Downloaded Artifacts
-        run: |
-          pwd
-          ls -la
-          echo "=== downloaded-artifacts tree ==="
-          find downloaded-artifacts -maxdepth 5 -type f -print || true
-
-      - name: Normalize Security Results
-        run: |
-          if [ -f scripts/normalize-security-results.sh ]; then
-            NORMALIZER_SCRIPT="scripts/normalize-security-results.sh"
-          elif [ -f governance-tools/scripts/normalize-security-results.sh ]; then
-            NORMALIZER_SCRIPT="governance-tools/scripts/normalize-security-results.sh"
-          else
-            echo "ERROR: No se encontro normalize-security-results.sh en scripts/ ni en governance-tools/scripts/."
-            exit 1
-          fi
-
-          echo "Using normalizer: ${NORMALIZER_SCRIPT}"
-          chmod +x "${NORMALIZER_SCRIPT}"
-          "${NORMALIZER_SCRIPT}" downloaded-artifacts security-results
-
-      - name: Ensure Required JSON Files
-        run: |
-          ensure_json_file() {
-            file="$1"
-            content="$2"
-            if [ ! -f "security-results/${file}" ]; then
-              echo "WARN: Archivo requerido ausente -> security-results/${file}. Se crea fallback."
-              printf '%s\n' "$content" > "security-results/${file}"
-            fi
-          }
-
-          ensure_json_file "trufflehog-results.json" "[]"
-          ensure_json_file "semgrep-results.json" '{"results": []}'
-          ensure_json_file "snyk-results.json" '{"vulnerabilities": []}'
-          ensure_json_file "trivy-results.json" '{"Results": []}'
-          ensure_json_file "zap-results.json" '{"site": []}'
-
-          echo "=== security-results final ==="
-          ls -la security-results || true
+          path: all-results
+          merge-multiple: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Install AI Engine
-        run: pip install --no-cache-dir anthropic
-
-      - name: Debug AI Configuration
-        env:
-          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
-          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
+      - name: Install AI Engine Dependencies
         run: |
-          if [ -n "${CLAUDE_API_KEY:-}" ]; then
-            echo "CLAUDE_API_KEY detectada (longitud: ${#CLAUDE_API_KEY})"
-          else
-            echo "CLAUDE_API_KEY ausente"
-          fi
+          pip install --no-cache-dir google-generativeai
 
-          if [ -n "${CLAUDE_MODEL:-}" ]; then
-            echo "CLAUDE_MODEL configurado: ${CLAUDE_MODEL}"
-          else
-            echo "CLAUDE_MODEL no configurado. Se usara fallback del script."
-          fi
-
-      - name: Anthropic API Healthcheck
+      - name: Run IA Triage & Remediation
         env:
-          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
-          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
-        continue-on-error: true
-        run: |
-          python - <<'PY'
-          import os
-          import sys
-
-          try:
-            from anthropic import Anthropic
-          except Exception as exc:
-            print(f"Healthcheck ERROR: paquete anthropic no disponible: {exc}")
-            sys.exit(0)
-
-          key = os.getenv("CLAUDE_API_KEY")
-          if not key:
-            print("Healthcheck WARN: CLAUDE_API_KEY ausente")
-            sys.exit(0)
-
-          requested = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-latest")
-          models = [requested, "claude-3-5-sonnet-latest", "claude-3-5-sonnet-20240620"]
-          seen = set()
-          models = [m for m in models if m and not (m in seen or seen.add(m))]
-
-          client = Anthropic(api_key=key)
-          ok = False
-          for model in models:
-            try:
-              response = client.messages.create(
-                model=model,
-                max_tokens=16,
-                messages=[{"role": "user", "content": "Ping de salud CI"}],
-              )
-              text = response.content[0].text if response.content else "(sin contenido)"
-              print(f"Healthcheck OK con modelo {model}: {text[:80]}")
-              ok = True
-              break
-            except Exception as exc:
-              print(f"Healthcheck FAIL con modelo {model}: {exc}")
-
-          if not ok:
-            print("Healthcheck WARN: Ningun modelo respondio. Revisar key, cuota, permisos o nombre de modelo.")
-          PY
-
-      - name: Run IA Triage Mentor
-        env:
-          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
         run: |
-          if [ -z "${CLAUDE_API_KEY:-}" ]; then
-            echo "WARN: CLAUDE_API_KEY no esta configurada. Se omite la fase de IA y el pipeline continua."
-            if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-              {
-                echo "# 🤖 Reporte de Auditoría IA"
-                echo "⚠️ IA omitida: CLAUDE_API_KEY no configurada."
-              } >> "${GITHUB_STEP_SUMMARY}"
-            fi
-            exit 0
-          fi
-
-          if [ -f scripts/ia-triage.py ]; then
-            TRIAGE_SCRIPT="scripts/ia-triage.py"
-          elif [ -f governance-tools/scripts/ia-triage.py ]; then
-            TRIAGE_SCRIPT="governance-tools/scripts/ia-triage.py"
-          else
-            echo "ERROR: No se encontro ia-triage.py en scripts/ ni en governance-tools/scripts/."
+          # Verificación de la API Key
+          if [ -z "${GEMINI_API_KEY:-}" ]; then
+            echo "❌ ERROR: GEMINI_API_KEY no configurada. La auditoría IA es obligatoria."
             exit 1
           fi
 
-          echo "Using triage script: ${TRIAGE_SCRIPT}"
-          set +e
-          python "${TRIAGE_SCRIPT}" security-results
-          TRIAGE_EXIT_CODE=$?
-          set -e
-
-          if [ "${TRIAGE_EXIT_CODE}" -eq 0 ]; then
-            echo "AI triage completado: sin hallazgos prioritarios."
-          elif [ "${TRIAGE_EXIT_CODE}" -eq 1 ]; then
-            echo "AI triage completado: se detectaron hallazgos CRÍTICOS."
-            echo "❌ El pipeline fallará por decisión de seguridad."
-            exit 1
+          # Localizar el script de auditoría que creamos anteriormente
+          if [ -f .github/scripts/gemini_auditor.py ]; then
+            AUDITOR_SCRIPT=".github/scripts/gemini_auditor.py"
           else
-            echo "WARN: AI triage no pudo ejecutarse correctamente (exit ${TRIAGE_EXIT_CODE})."
-            echo "Se continua el pipeline para no bloquear por un problema operativo de IA."
-            if [ -n "${GITHUB_STEP_SUMMARY:-}" ] && [ -f "${GITHUB_STEP_SUMMARY}" ]; then
-              echo "=== Detalle de resumen IA (tail) ==="
-              tail -n 60 "${GITHUB_STEP_SUMMARY}" || true
-            fi
-            if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-              {
-                echo "# 🤖 Reporte de Auditoría IA"
-                echo "⚠️ IA con error operativo (exit ${TRIAGE_EXIT_CODE}). Revisar token/API o disponibilidad del proveedor."
-              } >> "${GITHUB_STEP_SUMMARY}"
-            fi
-            exit 0
+            echo "❌ ERROR: No se encontró .github/scripts/gemini_auditor.py"
+            exit 1
           fi
+
+          echo "🚀 Iniciando Auditoría con Gemini..."
+          # Ejecutamos el script. Este generará el archivo REPORTE_IA_SEGURIDAD.md
+          python "${AUDITOR_SCRIPT}"
+
+      # Publicamos el reporte en el resumen del Job de GitHub (Summary)
+      - name: Publish Report to Job Summary
+        if: always()
+        run: |
+          if [ -f REPORTE_IA_SEGURIDAD.md ]; then
+            cat REPORTE_IA_SEGURIDAD.md >> $GITHUB_STEP_SUMMARY
+          else
+            echo "# 🤖 Reporte de Auditoría IA" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ No se pudo generar el archivo de reporte." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      # Si es un Pull Request, ponemos la remediación como comentario
+      - name: Post AI Report to PR
+        if: github.event_name == 'pull_request' && always()
+        uses: mshick/add-pr-comment@v2
+        with:
+          message-path: REPORTE_IA_SEGURIDAD.md
+
+      # Guardamos el reporte como un artefacto descargable
+      - name: Upload Final AI Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AI-Remediation-Report
+          path: REPORTE_IA_SEGURIDAD.md
+          retention-days: 5
