@@ -1,7 +1,17 @@
 import os
 import json
-from google import genai # Importación del nuevo SDK
 import sys
+
+try:
+    from google import genai
+except ImportError:
+    try:
+        import google.genai as genai
+    except ImportError:
+        print("❌ Error: No se pudo encontrar la librería google-genai.")
+        print("Asegúrate de ejecutar: pip install google-genai")
+        sys.exit(1)
+
 
 # 1. Configuración de la IA con el nuevo SDK
 API_KEY = os.environ.get("GEMINI_API_KEY")
