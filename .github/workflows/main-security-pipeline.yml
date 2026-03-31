@@ -19,6 +19,8 @@ on:
         required: true
       DTRACK_API_KEY:
         required: false
+      DEPENDABOT_PAT:
+        required: true
   workflow_dispatch:
 
 # Permisos globales para que CodeQL y las herramientas SARIF funcionen
@@ -71,6 +73,8 @@ jobs:
     name: "Orquestacion - Dependabot"
     needs: secrets-audit
     uses: ./.github/workflows/security-dependabot.yml
+    secrets:
+      DEPENDABOT_PAT: ${{ secrets.DEPENDABOT_PAT }}
 
   # FASE 3: ANÁLISIS DINÁMICO (DAST) Y CONTENEDORES
   # Se ejecuta después de que el análisis estático no encuentre bloqueos críticos inmediatos
