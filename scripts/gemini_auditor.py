@@ -10,6 +10,7 @@ if not API_KEY:
     sys.exit(1)
 
 genai.configure(api_key=API_KEY)
+# Aseguramos que usamos el modelo correcto y compatible
 model = genai.GenerativeModel('gemini-1.5-flash')
 
 def parse_sarif(file_path):
@@ -19,6 +20,7 @@ def parse_sarif(file_path):
             data = json.load(f)
         findings = []
         for run in data.get('runs', []):
+            tool_name = run.get('tool', {}).get('driver', {}).get('name', 'Herramienta')
             for result in run.get('results', []):
                 level = result.get('level', 'warning')
                 if level in ['error', 'warning']:
@@ -34,7 +36,7 @@ def parse_sarif(file_path):
                         line_info = phys_loc.get('region', {}).get('startLine', 'N/A')
                     
                     findings.append({
-                        "herramienta": run.get('tool', {}).get('driver', {}).get('name', 'Herramienta SARIF'),
+                        "herramienta": tool_name,
                         "regla": rule_id,
                         "archivo": file_info,
                         "linea": line_info,
@@ -46,13 +48,23 @@ def parse_sarif(file_path):
         return []
 
 def parse_json_generic(file_path):
-    """Lectura simple para archivos JSON genéricos"""
+    """Lectura robusta para JSON estándar y JSON Lines (Trufflehog/Trivy)"""
     try:
         with open(file_path, 'r') as f:
-            return json.load(f)
+            content = f.read().strip()
+            if not content:
+                return []
+            
+            # Intento 1: JSON Estándar (Array o Dict)
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError:
+                # Intento 2: JSON Lines (un objeto por línea, común en scanners de seguridad)
+                f.seek(0)
+                return [json.loads(line) for line in f if line.strip()]
     except Exception as e:
         print(f"⚠️ Error leyendo JSON {file_path}: {e}")
-        return {}
+        return {"error": str(e)}
 
 def main():
     results_dir = 'all-results'
@@ -68,51 +80,61 @@ def main():
     for root, dirs, files in os.walk(results_dir):
         for file in files:
             path = os.path.join(root, file)
+            # Evitamos procesar archivos vacíos o de logs
+            if os.path.getsize(path) == 0:
+                continue
+                
             if file.endswith('.sarif'):
-                all_context.append({"origen": file, "hallazgos": parse_sarif(path)})
+                res = parse_sarif(path)
+                if res: all_context.append({"origen": file, "hallazgos": res})
             elif file.endswith('.json'):
-                all_context.append({"origen": file, "hallazgos": parse_json_generic(path)})
+                res = parse_json_generic(path)
+                if res: all_context.append({"origen": file, "hallazgos": res})
 
-    # 3. Construir el Prompt Maestro con la DATA INYECTADA
-    prompt_instrucciones = """
-    Eres un Arquitecto Senior de DevSecOps. Tu misión es auditar los reportes y proponer remediaciones para "Backend_IDS" (Java 21 / Spring Boot).
+    if not all_context:
+        print("✅ No se encontraron hallazgos para analizar.")
+        sys.exit(0)
 
-    ### INSTRUCCIONES DE GOBERNANZA:
-    1. Si detectas fallos CRÍTICOS o ALTOS sin corrección trivial, el veredicto debe ser "RECHAZADO".
-    2. Proporciona código corregido con el comentario // CORRECCIÓN APLICADA.
-    3. Usa tablas para resumir riesgos (Probabilidad x Impacto).
+    # 3. Construir el Prompt Maestro
+    prompt_final = f"""
+    Eres un Arquitecto Senior de DevSecOps. Analiza estos reportes de seguridad para el proyecto "Backend_IDS" (Java 21 / Spring Boot).
 
-    ### DATOS DE SEGURIDAD DETECTADOS:
+    ### INSTRUCCIONES:
+    1. Si hay fallos CRÍTICOS (especialmente secretos expuestos), el veredicto es "RECHAZADO".
+    2. Proporciona bloques de código con // CORRECCIÓN APLICADA.
+    3. Resume en una tabla: ID, Gravedad, Archivo, Impacto.
+
+    ### REPORTES DETECTADOS:
+    {json.dumps(all_context, indent=2)}
     """
-    
-    # Convertimos los hallazgos en texto para el prompt
-    datos_hallazgos = json.dumps(all_context, indent=2)
-    prompt_final = prompt_instrucciones + datos_hallazgos
 
     # 4. Generar reporte con Gemini
     try:
-        print("🤖 Enviando hallazgos a Gemini 1.5 Flash...")
+        print(f"🤖 Enviando {len(all_context)} reportes a Gemini 1.5 Flash...")
+        # Usamos contents para asegurar compatibilidad con versiones de API
         response = model.generate_content(prompt_final)
+        
+        if not response.text:
+            raise Exception("Gemini devolvió una respuesta vacía.")
+
         reporte_texto = response.text
         
-        report_path = "REPORTE_IA_SEGURIDAD.md"
-        with open(report_path, "w", encoding="utf-8") as f:
+        with open("REPORTE_IA_SEGURIDAD.md", "w", encoding="utf-8") as f:
             f.write(reporte_texto)
         
-        print(f"✅ Reporte generado: {report_path}")
+        print("✅ Reporte generado: REPORTE_IA_SEGURIDAD.md")
 
-        # 5. LÓGICA BLOQUEANTE (EXIT CODE)
-        # Si la IA determina que el riesgo es demasiado alto, fallamos el pipeline.
-        if "RECHAZADO" in reporte_texto.upper() or "CRÍTICO" in reporte_texto.upper():
-            print("❌ GOBERNANZA: Se han detectado riesgos inaceptables. Bloqueando pipeline.")
+        # 5. Lógica de bloqueo
+        reducido = reporte_texto.upper()
+        if "RECHAZADO" in reducido or "CRÍTICO" in reducido or "CRITICAL" in reducido:
+            print("❌ GOBERNANZA: Riesgos altos detectados.")
             sys.exit(1)
-        else:
-            print("✅ GOBERNANZA: El código cumple con los estándares mínimos.")
-            sys.exit(0)
+        
+        sys.exit(0)
 
     except Exception as e:
-        print(f"⚠️ Error en la API de Gemini o el Triage: {str(e)}")
-        print("Continuando sin auditoría IA para no bloquear el desarrollo.")
+        print(f"⚠️ Error en la fase de IA: {str(e)}")
+        # No bloqueamos el pipeline si la IA falla (opcional)
         sys.exit(0)
 
 if __name__ == "__main__":
