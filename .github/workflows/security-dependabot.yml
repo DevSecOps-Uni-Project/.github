@@ -10,8 +10,7 @@ jobs:
 
     permissions:
       contents: read
-      security-events: read
-      vulnerability-alerts: read
+      security-events: write
 
     steps:
       - name: Checkout Codigo
