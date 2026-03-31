@@ -10,11 +10,24 @@ jobs:
   ai-triage:
     name: "AI Security Mentor & Remediator"
     runs-on: ubuntu-latest
+    permissions:
+      contents: read       
+      pull-requests: write 
+      security-events: read
     steps:
-      - name: Checkout Repository
+      # 1. Descargamos el código del repo que lanzó el pipeline (Backend)
+      - name: Checkout Application Repository
         uses: actions/checkout@v4
 
-      # Descargamos todos los artefactos de las fases anteriores
+      # 2. Descargamos el repo de GOBERNANZA (donde vive el script .py)
+      - name: Checkout Governance Tools
+        uses: actions/checkout@v4
+        with:
+          repository: DevSecOps-Uni-Project/.github # Tu repo central
+          path: governance-tools # Lo ponemos en una carpeta aparte
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # 3. Descargamos los reportes de seguridad (SARIF/JSON)
       - name: Download All Security Artifacts
         uses: actions/download-artifact@v4
         with:
@@ -35,53 +48,33 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 1. Verificación de la API Key
           if [ -z "${GEMINI_API_KEY:-}" ]; then
-            echo "❌ ERROR: GEMINI_API_KEY no configurada. La auditoría IA es obligatoria."
+            echo "❌ ERROR: GEMINI_API_KEY no configurada."
             exit 1
           fi
 
-          # 2. Localizar el script en la ruta corregida (scripts/ en lugar de .github/scripts/)
-          if [ -f scripts/gemini_auditor.py ]; then
-            AUDITOR_SCRIPT="scripts/gemini_auditor.py"
-          elif [ -f .github/scripts/gemini_auditor.py ]; then
-            AUDITOR_SCRIPT=".github/scripts/gemini_auditor.py"
+          # AJUSTE DE RUTA: Ahora buscamos dentro de la carpeta de gobernanza
+          if [ -f governance-tools/scripts/gemini_auditor.py ]; then
+            AUDITOR_SCRIPT="governance-tools/scripts/gemini_auditor.py"
           else
-            echo "❌ ERROR: No se encontró gemini_auditor.py en scripts/ ni en .github/scripts/"
-            # Listamos el directorio para debuggear en el log si vuelve a fallar
-            ls -R
+            echo "❌ ERROR: No se encontró el script en governance-tools/scripts/gemini_auditor.py"
+            ls -R governance-tools # Debug para ver dónde quedó el archivo
             exit 1
           fi
 
-          echo "🚀 Usando script en: ${AUDITOR_SCRIPT}"
-          echo "🚀 Iniciando Auditoría con Gemini 1.5 Flash..."
-          
-          # 3. Ejecución del motor de IA
+          echo "🚀 Usando script centralizado de Gobernanza..."
           python "${AUDITOR_SCRIPT}"
 
-      # Publicamos el reporte en el resumen del Job de GitHub (Summary)
+      # 4. Publicación de resultados (Igual que antes)
       - name: Publish Report to Job Summary
         if: always()
         run: |
           if [ -f REPORTE_IA_SEGURIDAD.md ]; then
             cat REPORTE_IA_SEGURIDAD.md >> $GITHUB_STEP_SUMMARY
-          else
-            echo "# 🤖 Reporte de Auditoría IA" >> $GITHUB_STEP_SUMMARY
-            echo "⚠️ No se pudo generar el archivo de reporte." >> $GITHUB_STEP_SUMMARY
           fi
 
-      # Si es un Pull Request, ponemos la remediación como comentario
       - name: Post AI Report to PR
         if: github.event_name == 'pull_request' && always()
         uses: mshick/add-pr-comment@v2
         with:
           message-path: REPORTE_IA_SEGURIDAD.md
-
-      # Guardamos el reporte como un artefacto descargable
-      - name: Upload Final AI Report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: AI-Remediation-Report
-          path: REPORTE_IA_SEGURIDAD.md
-          retention-days: 5
