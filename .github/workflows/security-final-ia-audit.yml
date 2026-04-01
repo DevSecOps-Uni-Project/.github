@@ -56,17 +56,13 @@ jobs:
             exit 1
           fi
 
-          # Validamos la ruta del script en la carpeta de gobernanza
-          # Nota: Asegúrate de que el nombre del archivo en tu repo sea exactamente ia-triage.py
-          if [ -f governance-tools/scripts/ia-triage.py ]; then
-            AUDITOR_SCRIPT="governance-tools/scripts/ia-triage.py"
-          elif [ -f governance-tools/scripts/gemini_auditor.py ]; then
-            AUDITOR_SCRIPT="governance-tools/scripts/gemini_auditor.py"
-          else
-            echo "❌ ERROR: No se encontró el script de auditoría."
+          if [ ! -f governance-tools/scripts/gemini_auditor.py ]; then
+            echo "❌ ERROR: No se encontró governance-tools/scripts/gemini_auditor.py"
             ls -R governance-tools/scripts
             exit 1
           fi
+
+          AUDITOR_SCRIPT="governance-tools/scripts/gemini_auditor.py"
 
           echo "🚀 Ejecutando auditoría con ${AUDITOR_SCRIPT}..."
           echo "📂 Archivos descargados para IA:"

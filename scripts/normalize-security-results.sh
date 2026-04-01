@@ -14,7 +14,7 @@ if [ ! -d "${SOURCE_DIR}" ]; then
   exit 1
 fi
 
-# Canonical JSON outputs expected by ia-triage.py
+# Canonical JSON outputs expected by gemini_auditor.py
 required=(
   "trufflehog-results.json"
   "semgrep-results.json"

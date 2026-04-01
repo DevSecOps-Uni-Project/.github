@@ -68,14 +68,19 @@ def parse_json_generic(file_path):
         return []
 
 def main():
-    results_dir = 'all-results'
+    results_dir = sys.argv[1] if len(sys.argv) > 1 else 'security-results'
     all_context = []
 
     print(f"--- 🛡️ Iniciando Auditoría IA en {results_dir} ---")
 
     if not os.path.exists(results_dir):
-        print(f"❌ Directorio {results_dir} no encontrado.")
-        sys.exit(1)
+        # Compatibilidad con ejecuciones antiguas que descargaban artefactos en all-results
+        if results_dir == 'security-results' and os.path.exists('all-results'):
+            results_dir = 'all-results'
+            print(f"ℹ️ Usando ruta alternativa de artefactos: {results_dir}")
+        else:
+            print(f"❌ Directorio {results_dir} no encontrado.")
+            sys.exit(1)
 
     # 2. Recolección de evidencias
     for root, _, files in os.walk(results_dir):
