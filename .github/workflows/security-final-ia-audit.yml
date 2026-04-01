@@ -15,11 +15,11 @@ jobs:
       pull-requests: write 
       security-events: read
     steps:
-      # 1. Descargamos el código del repo que lanzó el pipeline
+      # 1. Código del repo actual
       - name: Checkout Application Repository
         uses: actions/checkout@v4
 
-      # 2. Descargamos el repo de GOBERNANZA
+      # 2. Repo de GOBERNANZA (donde vive el script)
       - name: Checkout Governance Tools
         uses: actions/checkout@v4
         with:
@@ -27,7 +27,7 @@ jobs:
           path: governance-tools
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # 3. Descargamos los reportes de seguridad
+      # 3. Descarga de artefactos (SARIF, JSON, etc.)
       - name: Download All Security Artifacts
         uses: actions/download-artifact@v4
         with:
@@ -38,47 +38,47 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          cache: 'pip' # Optimiza ejecuciones futuras
 
-      # CORRECCIÓN DE DEPENDENCIAS: Instalamos el nuevo SDK (google-genai)
+      # 4. Instalación limpia del nuevo SDK
       - name: Install AI Engine Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip uninstall -y google-generativeai google-api-core || true
           pip install -U google-genai
 
+      # 5. Ejecución del Auditor
       - name: Run IA Triage & Remediation
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: "gemini-2.0-flash" # Forzamos el uso de 2.0 que es más potente
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -z "${GEMINI_API_KEY:-}" ]; then
-            echo "❌ ERROR: GEMINI_API_KEY no configurada."
-            exit 1
-          fi
-
-          if [ ! -f governance-tools/scripts/gemini_auditor.py ]; then
-            echo "❌ ERROR: No se encontró governance-tools/scripts/gemini_auditor.py"
-            ls -R governance-tools/scripts
+          if [ -z "${GEMINI_API_KEY}" ]; then
+            echo "❌ ERROR: GEMINI_API_KEY no configurada en los secrets."
             exit 1
           fi
 
           AUDITOR_SCRIPT="governance-tools/scripts/gemini_auditor.py"
-
+          
           echo "🚀 Ejecutando auditoría con ${AUDITOR_SCRIPT}..."
-          echo "📂 Archivos descargados para IA:"
-          ls -la security-results || true
+          # Ejecutamos pasando el directorio de resultados como argumento
           python "${AUDITOR_SCRIPT}" security-results
 
-      # 4. Publicación de resultados
+      # 6. Publicación en el Job Summary (Vista de GitHub Actions)
       - name: Publish Report to Job Summary
         if: always()
         run: |
           if [ -f REPORTE_IA_SEGURIDAD.md ]; then
+            echo "### 🤖 Informe de Seguridad IA" >> $GITHUB_STEP_SUMMARY
             cat REPORTE_IA_SEGURIDAD.md >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ No se generó reporte de IA." >> $GITHUB_STEP_SUMMARY
           fi
 
+      # 7. Comentario en el Pull Request (Si aplica)
       - name: Post AI Report to PR
         if: github.event_name == 'pull_request' && always()
         uses: mshick/add-pr-comment@v2
         with:
           message-path: REPORTE_IA_SEGURIDAD.md
+          allow-repeated-comments: false
