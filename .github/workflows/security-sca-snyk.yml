@@ -72,12 +72,7 @@ jobs:
 
           if [ ! -s security-results/snyk.sarif ]; then
             echo "⚠️ Snyk no generó SARIF. Se crea fallback mínimo."
-            cat > security-results/snyk.sarif << 'EOF'
-            {
-              "version": "2.1.0",
-              "runs": []
-            }
-            EOF
+            printf '%s\n' '{"version":"2.1.0","runs":[]}' > security-results/snyk.sarif
           fi
 
           echo "=== Snyk JSON Preview ==="
