@@ -2,6 +2,13 @@ name: "Security - Final AI Audit (Gemini)"
 
 on:
   workflow_call:
+    inputs:
+      governance-tools-ref:
+        type: string
+        default: 'd8a9b820e593f7767b4456eb85554d1c3a28ca98'
+      ia-fail-on-api-error:
+        type: boolean
+        default: false
     secrets:
       GEMINI_API_KEY:
         required: true
@@ -24,6 +31,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: DevSecOps-Uni-Project/.github
+          ref: ${{ inputs.governance-tools-ref }}
           path: governance-tools
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -51,6 +59,7 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: "gemini-2.0-flash" # Forzamos el uso de 2.0 que es más potente
+          IA_FAIL_ON_API_ERROR: ${{ inputs.ia-fail-on-api-error }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ -z "${GEMINI_API_KEY}" ]; then

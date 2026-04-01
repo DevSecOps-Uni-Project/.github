@@ -12,9 +12,15 @@ on:
       app-port:
         type: string
         default: '8080'
+      governance-tools-ref:
+        type: string
+        default: 'd8a9b820e593f7767b4456eb85554d1c3a28ca98'
+      ia-fail-on-api-error:
+        type: boolean
+        default: false
     secrets:
       SNYK_TOKEN:
-        required: false
+        required: true
       GEMINI_API_KEY: 
         required: true
       DTRACK_API_KEY:
@@ -106,5 +112,8 @@ jobs:
       security-events: read
       actions: read
     uses: ./.github/workflows/security-final-ia-audit.yml 
+    with:
+      governance-tools-ref: ${{ inputs.governance-tools-ref }}
+      ia-fail-on-api-error: ${{ inputs.ia-fail-on-api-error }}
     secrets:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

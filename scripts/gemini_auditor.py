@@ -28,6 +28,10 @@ DEFAULT_MODEL_CANDIDATES = [
     "gemini-1.5-flash-latest"
 ]
 
+
+def _is_truthy(value):
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
 def _normalize_model_name(name):
     if not name:
         return ""
@@ -82,6 +86,7 @@ def parse_json_generic(file_path):
 
 def main():
     results_dir = sys.argv[1] if len(sys.argv) > 1 else 'security-results'
+    fail_on_api_error = _is_truthy(os.environ.get("IA_FAIL_ON_API_ERROR", "false"))
     all_context = []
 
     print(f"--- 🛡️ Iniciando Auditoría IA en {results_dir} ---")
@@ -157,15 +162,27 @@ def main():
             try:
                 print(f"ℹ️ Reintentando con: {fallback}")
                 response = client.models.generate_content(model=fallback, contents=prompt)
+                report_text = response.text
                 with open("REPORTE_IA_SEGURIDAD.md", "w", encoding="utf-8") as f:
-                    f.write(response.text)
+                    f.write(report_text)
                 print(f"✅ Logrado con {fallback}")
+
+                if "RECHAZADO" in report_text.upper() or "CRITICAL" in report_text.upper():
+                    print("❌ Veredicto de IA: Fallos críticos detectados.")
+                    sys.exit(1)
+
                 sys.exit(0)
-            except:
+            except Exception as fallback_error:
+                print(f"⚠️ Falló fallback {fallback}: {fallback_error}")
                 continue
         
         print("❌ Todos los modelos fallaron.")
-        sys.exit(0) # No bloqueamos el pipeline si la IA está caída
+        if fail_on_api_error:
+            print("❌ IA_FAIL_ON_API_ERROR=true: bloqueando pipeline por error de IA.")
+            sys.exit(1)
+
+        print("⚠️ IA_FAIL_ON_API_ERROR=false: no se bloquea el pipeline por caída de IA.")
+        sys.exit(0)
 
 if __name__ == "__main__":
     main()

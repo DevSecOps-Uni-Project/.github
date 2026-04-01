@@ -8,7 +8,7 @@ on:
         default: '21'
     secrets:
       SNYK_TOKEN:
-        required: false
+        required: true
 
 jobs:
   dependency-scan:
@@ -68,6 +68,16 @@ jobs:
           if [ ! -s security-results/snyk-results.json ]; then
             echo "⚠️ Snyk no generó resultados. Se crea fallback."
             echo '{"vulnerabilities": []}' > security-results/snyk-results.json
+          fi
+
+          if [ ! -s security-results/snyk.sarif ]; then
+            echo "⚠️ Snyk no generó SARIF. Se crea fallback mínimo."
+            cat > security-results/snyk.sarif << 'EOF'
+            {
+              "version": "2.1.0",
+              "runs": []
+            }
+            EOF
           fi
 
           echo "=== Snyk JSON Preview ==="
