@@ -363,7 +363,7 @@ Analiza los siguientes reportes de seguridad y proporciona un análisis detallad
     try:
         print(f"🤖 Solicitando análisis a {MODEL}...")
 
-        response = client.beta.messages.create(
+        response = client.messages.create(
             model=MODEL,
             max_tokens=4096,
             messages=[
