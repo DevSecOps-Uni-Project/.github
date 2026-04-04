@@ -2,13 +2,10 @@ name: "Security - Dependabot Alerts"
 
 on:
   workflow_call:
-    secrets:
-      DEPENDABOT_PAT:
-        required: true
 
 jobs:
   dependabot-scan:
-    name: "Dependabot Vulnerability Scan"
+    name: "6. Dependabot"
     runs-on: ubuntu-latest
 
     permissions:
@@ -22,11 +19,10 @@ jobs:
       - name: Preparar directorio de resultados
         run: mkdir -p security-results
 
-      - name: Obtener alerts de Dependabot (con PAT)
+      - name: Obtener alerts de Dependabot (con GITHUB_TOKEN)
         run: |
-          # CAMBIO AQUÍ: Ahora usamos DEPENDABOT_PAT en lugar de GITHUB_TOKEN
           curl -s -w "\nHTTP_STATUS:%{http_code}" \
-            -H "Authorization: Bearer ${{ secrets.DEPENDABOT_PAT }}" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/dependabot/alerts?per_page=100" \
             > response.txt
@@ -41,7 +37,7 @@ jobs:
             echo "⚠️ Error en API Dependabot"
             cat security-results/dependabot-results.json
             # Opcional: puedes forzar el fallo del step si no es 200
-            # exit 1 
+            # exit 1
           fi
 
       - name: Validar JSON generado

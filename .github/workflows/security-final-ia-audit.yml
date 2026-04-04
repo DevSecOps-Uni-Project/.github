@@ -10,16 +10,16 @@ on:
         type: boolean
         default: false
     secrets:
-      GEMINI_API_KEY:
+      OPENAI_API_KEY:
         required: true
 
 jobs:
   ai-triage:
-    name: "AI Security Mentor & Remediator"
+    name: "8. Final AI Audit"
     runs-on: ubuntu-latest
     permissions:
-      contents: read       
-      pull-requests: write 
+      contents: read
+      pull-requests: write
       security-events: read
     steps:
       # 1. Código del repo actual
@@ -30,7 +30,7 @@ jobs:
       - name: Checkout Governance Tools
         uses: actions/checkout@v4
         with:
-          repository: DevSecOps-Uni-Project/.github
+          repository: ${{ github.repository_owner }}/.github
           ref: ${{ inputs.governance-tools-ref }}
           path: governance-tools
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -48,46 +48,87 @@ jobs:
           python-version: '3.10'
           cache: 'pip' # Optimiza ejecuciones futuras
 
-      # 4. Instalación limpia del nuevo SDK
+      # 4. Instalación de dependencias para OpenAI
       - name: Install AI Engine Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -U google-genai
+          pip install -U openai
 
-      # 5. Ejecución del Auditor
-      - name: Run IA Triage & Remediation
+      # 5. Ejecución del Auditor con OpenAI
+      - name: Run OpenAI Security Audit & Remediation
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: "gemini-2.0-flash" # Forzamos el uso de 2.0 que es más potente
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           IA_FAIL_ON_API_ERROR: ${{ inputs.ia-fail-on-api-error }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -z "${GEMINI_API_KEY}" ]; then
-            echo "❌ ERROR: GEMINI_API_KEY no configurada en los secrets."
+          if [ -z "${OPENAI_API_KEY}" ]; then
+            echo "❌ ERROR: OPENAI_API_KEY no configurada en los secrets."
             exit 1
           fi
 
-          AUDITOR_SCRIPT="governance-tools/scripts/gemini_auditor.py"
-          
-          echo "🚀 Ejecutando auditoría con ${AUDITOR_SCRIPT}..."
-          # Ejecutamos pasando el directorio de resultados como argumento
+          AUDITOR_SCRIPT="scripts/openai_auditor.py"
+
+          echo "🚀 Ejecutando auditoría con OpenAI (GPT-4o)..."
           python "${AUDITOR_SCRIPT}" security-results
 
-      # 6. Publicación en el Job Summary (Vista de GitHub Actions)
+      # 6. Upload de Reporte Estructurado (JSON)
+      - name: Upload Vulnerability Report (JSON)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-vulnerabilities-report
+          path: VULNERABILITIES.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      # 7. Publicación en el Job Summary (Vista de GitHub Actions)
       - name: Publish Report to Job Summary
         if: always()
         run: |
           if [ -f REPORTE_IA_SEGURIDAD.md ]; then
-            echo "### 🤖 Informe de Seguridad IA" >> $GITHUB_STEP_SUMMARY
+            echo "### 🤖 Informe de Seguridad IA (OpenAI GPT-4o)" >> $GITHUB_STEP_SUMMARY
             cat REPORTE_IA_SEGURIDAD.md >> $GITHUB_STEP_SUMMARY
           else
             echo "⚠️ No se generó reporte de IA." >> $GITHUB_STEP_SUMMARY
           fi
 
-      # 7. Comentario en el Pull Request (Si aplica)
+      # 8. Comentario en el Pull Request (Si aplica)
       - name: Post AI Report to PR
         if: github.event_name == 'pull_request' && always()
         uses: mshick/add-pr-comment@v2
         with:
           message-path: REPORTE_IA_SEGURIDAD.md
           allow-repeated-comments: false
+
+      # 9. Trigger Auto-Remediation if possible
+      - name: Trigger Auto-Remediation Workflow
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+
+            if (!fs.existsSync('VULNERABILITIES.json')) {
+              console.log('No se encontró VULNERABILITIES.json');
+              return;
+            }
+
+            const report = JSON.parse(fs.readFileSync('VULNERABILITIES.json', 'utf8'));
+
+            if (report.can_auto_fix && report.vulnerabilidades.length > 0) {
+              console.log(`✅ Disparando auto-remediation para ${report.vulnerabilidades.length} vulnerabilidades`);
+
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'auto-remediate.yml',
+                ref: context.ref,
+                inputs: {
+                  'source-pr': context.payload.pull_request.number.toString(),
+                  'vulnerability-report': JSON.stringify(report)
+                }
+              });
+            } else {
+              console.log('Auto-fix no disponible para estas vulnerabilidades');
+            }

@@ -12,7 +12,7 @@ on:
 
 jobs:
   container-and-dast-security:
-    name: "4. Contenedores y DAST"
+    name: "7. Container and DAST"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Codigo

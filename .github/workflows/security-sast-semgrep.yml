@@ -5,7 +5,7 @@ on:
 
 jobs:
   sast-semgrep:
-    name: "2. SAST (Semgrep)"
+    name: "2. SAST Semgrep"
     runs-on: ubuntu-latest
 
     permissions:

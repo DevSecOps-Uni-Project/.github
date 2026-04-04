@@ -9,7 +9,7 @@ on:
 
 jobs:
   sbom-generation:
-    name: "3.5 Inventario SBOM"
+    name: "5. SBOM Inventory"
     runs-on: ubuntu-latest
 
     steps:
