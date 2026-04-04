@@ -363,7 +363,7 @@ Analiza los siguientes reportes de seguridad y proporciona un análisis detallad
     try:
         print(f"🤖 Solicitando análisis a {MODEL}...")
 
-        response = client.messages.create(
+        response = client.chat.completions.create(
             model=MODEL,
             max_tokens=4096,
             messages=[
@@ -374,8 +374,8 @@ Analiza los siguientes reportes de seguridad y proporciona un análisis detallad
             ]
         )
 
-        # Extract JSON from response
-        response_text = response.content[0].text
+        # Extract text from response
+        response_text = response.choices[0].message.content
 
         # Try to parse JSON
         try:
