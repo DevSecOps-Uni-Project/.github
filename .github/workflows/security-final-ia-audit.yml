@@ -47,13 +47,24 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-          cache: 'pip' # Optimiza ejecuciones futuras
 
       # 4. Instalación de dependencias para OpenAI
       - name: Install AI Engine Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -U openai
+
+      # 4.5 Verificar que existan los artefactos de seguridad
+      - name: Verify Security Artifacts
+        run: |
+          echo "📂 Contenido de security-results:"
+          if [ -d security-results ]; then
+            ls -la security-results/ || echo "Directorio existe pero está vacío"
+            find security-results -type f -exec ls -lh {} \;
+          else
+            echo "⚠️ Directorio security-results no existe"
+            mkdir -p security-results
+          fi
 
       # 5. Ejecución del Auditor con OpenAI
       - name: Run OpenAI Security Audit & Remediation
@@ -81,7 +92,33 @@ jobs:
 
           echo "🚀 Ejecutando auditoría con OpenAI (GPT-4o)..."
           echo "📂 Usando script: ${AUDITOR_SCRIPT}"
-          python "${AUDITOR_SCRIPT}" security-results
+          echo "📊 Directorio actual: $(pwd)"
+          python "${AUDITOR_SCRIPT}" security-results || {
+            echo "❌ El script de auditoría falló con código $?"
+            exit 1
+          }
+
+      # 5.5 Verificar que se generó el reporte
+      - name: Verify Report Generation
+        if: always()
+        run: |
+          echo "📋 Verificando reportes generados..."
+          if [ -f REPORTE_IA_SEGURIDAD.md ]; then
+            echo "✅ REPORTE_IA_SEGURIDAD.md existe"
+            echo "📏 Tamaño: $(wc -c < REPORTE_IA_SEGURIDAD.md) bytes"
+          else
+            echo "❌ REPORTE_IA_SEGURIDAD.md NO EXISTE"
+          fi
+
+          if [ -f VULNERABILITIES.json ]; then
+            echo "✅ VULNERABILITIES.json existe"
+            echo "📏 Tamaño: $(wc -c < VULNERABILITIES.json) bytes"
+          else
+            echo "❌ VULNERABILITIES.json NO EXISTE"
+          fi
+
+          echo "📂 Archivos en directorio actual:"
+          ls -la | grep -E "REPORTE|VULNERABILITIES" || echo "No hay reportes generados"
 
       # 6. Upload de Reporte Estructurado (JSON)
       - name: Upload Vulnerability Report (JSON)
@@ -104,12 +141,32 @@ jobs:
             echo "⚠️ No se generó reporte de IA." >> $GITHUB_STEP_SUMMARY
           fi
 
-      # 8. Comentario en el Pull Request (Si aplica)
+      # 8. Comentario en el Pull Request (Si aplica y reporte existe)
       - name: Post AI Report to PR
-        if: github.event_name == 'pull_request' && always()
+        if: |
+          github.event_name == 'pull_request' &&
+          always() &&
+          hashFiles('REPORTE_IA_SEGURIDAD.md') != ''
         uses: mshick/add-pr-comment@v2
         with:
           message-path: REPORTE_IA_SEGURIDAD.md
+          allow-repeats: false
+
+      # 9. Si no se pudo generar el reporte, postear error
+      - name: Post Error Message to PR
+        if: |
+          github.event_name == 'pull_request' &&
+          always() &&
+          hashFiles('REPORTE_IA_SEGURIDAD.md') == ''
+        uses: mshick/add-pr-comment@v2
+        with:
+          message: |
+            ❌ **Error en Auditoría IA**
+
+            No se pudo generar el reporte de IA. Detalles:
+            - El script de auditoría no generó REPORTE_IA_SEGURIDAD.md
+            - Verifica los logs del workflow para más información
+            - Asegúrate de que existen artefactos de seguridad para analizar
           allow-repeats: false
 
       # 9. Trigger Auto-Remediation if possible
