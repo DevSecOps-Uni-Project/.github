@@ -26,9 +26,10 @@ jobs:
       - name: Checkout Application Repository
         uses: actions/checkout@v4
 
-      # 2. Repo de GOBERNANZA (donde vive el script)
+      # 2. Intenta clonar repo de GOBERNANZA (opcional, puede no existir)
       - name: Checkout Governance Tools
         uses: actions/checkout@v4
+        continue-on-error: true
         with:
           repository: ${{ github.repository_owner }}/.github
           ref: ${{ inputs.governance-tools-ref }}
@@ -66,9 +67,20 @@ jobs:
             exit 1
           fi
 
-          AUDITOR_SCRIPT="scripts/openai_auditor.py"
+          # Buscar script primero en .github/scripts (repo actual)
+          # Si no existe, intentar en governance-tools/scripts
+          AUDITOR_SCRIPT=".github/scripts/openai_auditor.py"
+          if [ ! -f "${AUDITOR_SCRIPT}" ]; then
+            AUDITOR_SCRIPT="governance-tools/scripts/openai_auditor.py"
+          fi
+
+          if [ ! -f "${AUDITOR_SCRIPT}" ]; then
+            echo "❌ No se encontró openai_auditor.py en .github/scripts ni en governance-tools/scripts"
+            exit 1
+          fi
 
           echo "🚀 Ejecutando auditoría con OpenAI (GPT-4o)..."
+          echo "📂 Usando script: ${AUDITOR_SCRIPT}"
           python "${AUDITOR_SCRIPT}" security-results
 
       # 6. Upload de Reporte Estructurado (JSON)
