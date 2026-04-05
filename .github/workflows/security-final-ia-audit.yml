@@ -1,4 +1,4 @@
-name: "Security - Final AI Audit (Gemini)"
+name: "Security - Final AI Audit (Azure OpenAI)"
 
 on:
   workflow_call:
@@ -10,8 +10,14 @@ on:
         type: boolean
         default: false
     secrets:
-      OPENAI_API_KEY:
+      AZURE_OPENAI_PDF_ENDPOINT:
         required: true
+      AZURE_OPENAI_PDF_API_KEY:
+        required: true
+      AZURE_OPENAI_PDF_DEPLOYMENT:
+        required: true
+      AZURE_OPENAI_PDF_API_VERSION:
+        required: false
 
 jobs:
   ai-triage:
@@ -66,15 +72,21 @@ jobs:
             mkdir -p security-results
           fi
 
-      # 5. Ejecución del Auditor con OpenAI
-      - name: Run OpenAI Security Audit & Remediation
+      # 5. Ejecución del Auditor con Azure OpenAI
+      - name: Run Azure OpenAI Security Audit & Remediation
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          AZURE_OPENAI_PDF_ENDPOINT: ${{ secrets.AZURE_OPENAI_PDF_ENDPOINT }}
+          AZURE_OPENAI_PDF_API_KEY: ${{ secrets.AZURE_OPENAI_PDF_API_KEY }}
+          AZURE_OPENAI_PDF_DEPLOYMENT: ${{ secrets.AZURE_OPENAI_PDF_DEPLOYMENT }}
+          AZURE_OPENAI_PDF_API_VERSION: ${{ secrets.AZURE_OPENAI_PDF_API_VERSION }}
           IA_FAIL_ON_API_ERROR: ${{ inputs.ia-fail-on-api-error }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -z "${OPENAI_API_KEY}" ]; then
-            echo "❌ ERROR: OPENAI_API_KEY no configurada en los secrets."
+          if [ -z "${AZURE_OPENAI_PDF_ENDPOINT}" ] || [ -z "${AZURE_OPENAI_PDF_API_KEY}" ] || [ -z "${AZURE_OPENAI_PDF_DEPLOYMENT}" ]; then
+            echo "❌ ERROR: Credenciales de Azure OpenAI no configuradas correctamente."
+            echo "  - AZURE_OPENAI_PDF_ENDPOINT: ${AZURE_OPENAI_PDF_ENDPOINT:-(vacío)}"
+            echo "  - AZURE_OPENAI_PDF_API_KEY: ${AZURE_OPENAI_PDF_API_KEY:-(vacío)}"
+            echo "  - AZURE_OPENAI_PDF_DEPLOYMENT: ${AZURE_OPENAI_PDF_DEPLOYMENT:-(vacío)}"
             exit 1
           fi
 
@@ -90,7 +102,7 @@ jobs:
             exit 1
           fi
 
-          echo "🚀 Ejecutando auditoría con OpenAI (GPT-4o)..."
+          echo "🚀 Ejecutando auditoría con Azure OpenAI..."
           echo "📂 Usando script: ${AUDITOR_SCRIPT}"
           echo "📊 Directorio actual: $(pwd)"
           python "${AUDITOR_SCRIPT}" security-results || {
