@@ -33,14 +33,17 @@ jobs:
         uses: actions/checkout@v4
 
       # 2. Intenta clonar repo de GOBERNANZA (opcional, puede no existir)
-      - name: Checkout Governance Tools
-        uses: actions/checkout@v4
+      - name: Checkout Governance Tools (Optional)
         continue-on-error: true
-        with:
-          repository: ${{ github.repository_owner }}/.github
-          ref: ${{ inputs.governance-tools-ref }}
-          path: governance-tools
-          token: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "⏳ Intentando clonar repositorio de gobernanza..."
+          if git clone --depth 1 \
+            "https://github.com/${{ github.repository_owner }}/.github.git" \
+            governance-tools 2>/dev/null; then
+            echo "✅ Repositorio de gobernanza clonado exitosamente"
+          else
+            echo "⚠️ Repositorio de gobernanza no disponible (usaremos scripts locales)"
+          fi
 
       # 3. Descarga de artefactos (SARIF, JSON, etc.)
       - name: Download All Security Artifacts
