@@ -84,11 +84,15 @@ jobs:
         run: |
           AUDITOR_SCRIPT="governance-tools/scripts/openai_auditor.py"
           if [ ! -f "${AUDITOR_SCRIPT}" ]; then
+            AUDITOR_SCRIPT=".github/scripts/openai_auditor.py"
+          fi
+
+          if [ ! -f "${AUDITOR_SCRIPT}" ]; then
             AUDITOR_SCRIPT="scripts/openai_auditor.py"
           fi
 
           if [ ! -f "${AUDITOR_SCRIPT}" ]; then
-            echo "❌ No se encontró openai_auditor.py en governance-tools/scripts ni en scripts/"
+            echo "❌ No se encontró openai_auditor.py en governance-tools/scripts, .github/scripts ni scripts/"
             exit 1
           fi
 

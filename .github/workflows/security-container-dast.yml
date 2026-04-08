@@ -49,7 +49,7 @@ jobs:
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $(pwd):/src \
             aquasec/trivy:0.49.1 image --format json --output /src/security-results/trivy-results.json \
             --severity CRITICAL,HIGH,MEDIUM,LOW ${{ inputs.image-name }}:test
-          
+
           # Corregir permisos del archivo generado por Docker
           sudo chown $(id -u):$(id -g) security-results/trivy-results.json || true
         continue-on-error: true
@@ -60,10 +60,10 @@ jobs:
           docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v $(pwd):/src \
             aquasec/trivy:0.49.1 image --format sarif --output /src/security-results/trivy-results.sarif \
             --severity CRITICAL,HIGH,MEDIUM,LOW ${{ inputs.image-name }}:test
-          
+
           sudo chown $(id -u):$(id -g) security-results/trivy-results.sarif || true
         continue-on-error: true
-      
+
       - name: Conteo de vulnerabilidades Trivy
         if: always()
         run: |
@@ -88,13 +88,6 @@ jobs:
           echo "Medium: $MEDIUM"
           echo "Low: $LOW"
 
-      - name: Upload SARIF to GitHub
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: security-results/trivy-results.sarif
-          category: trivy
-
       - name: ZAP Scan (Basado en API/Baseline)
         uses: zaproxy/action-baseline@v0.12.0
         continue-on-error: true
@@ -104,7 +97,7 @@ jobs:
           fail_action: false
           cmd_options: '-r security-results/zap-report.html -J security-results/zap-results.json'
 
-      - name: Ensure DAST and Container JSON Output
+      - name: Ensure DAST and Container Output
         if: always()
         run: |
           if [ ! -f security-results/trivy-results.json ]; then
@@ -112,10 +105,22 @@ jobs:
             echo "WARN: Se genero fallback security-results/trivy-results.json"
           fi
 
+          if [ ! -f security-results/trivy-results.sarif ]; then
+            printf '%s\n' '{"version":"2.1.0","runs":[]}' > security-results/trivy-results.sarif
+            echo "WARN: Se genero fallback security-results/trivy-results.sarif"
+          fi
+
           if [ ! -f security-results/zap-results.json ]; then
             echo '{"site": []}' > security-results/zap-results.json
             echo "WARN: Se genero fallback security-results/zap-results.json"
           fi
+
+      - name: Upload SARIF to GitHub
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: security-results/trivy-results.sarif
+          category: trivy
 
       - name: Stop App Under Test
         if: always()
