@@ -1,5 +1,5 @@
 ---
-name: "Security - Auto-Remediation PR"
+name: "Security - Remediation Proposal PR"
 
 on:
   workflow_dispatch:
@@ -8,65 +8,91 @@ on:
         description: 'Source PR number'
         required: true
         type: string
-      vulnerability-report:
-        description: 'Vulnerability report JSON'
+      source-run-id:
+        description: 'Workflow run id that generated the vulnerability artifact'
         required: true
+        type: string
+      report-artifact-name:
+        description: 'Artifact name that contains VULNERABILITIES.json'
+        required: false
+        default: 'security-vulnerabilities-report'
         type: string
 
 permissions:
   contents: write
   pull-requests: write
   issues: write
+  actions: read
 
 jobs:
   auto-remediate:
-    name: "Auto-Fix Vulnerabilities"
+    name: "Create Remediation Proposal"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Download Vulnerability Report Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.report-artifact-name }}
+          path: remediation-input
+          run-id: ${{ inputs.source-run-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Parse Vulnerability Report
         id: parse-report
-        env:
-          VULNREPORT: ${{ inputs.vulnerability-report }}
         run: |
+          REPORT_PATH="remediation-input/VULNERABILITIES.json"
+          if [ ! -f "$REPORT_PATH" ]; then
+            echo "❌ No se encontró $REPORT_PATH"
+            exit 1
+          fi
+
           echo "Parsing vulnerability report..."
-          echo "$VULNREPORT" > /tmp/report.json
-          CRITICAL=$(jq '.resumen.criticos' /tmp/report.json)
-          HIGH=$(jq '.resumen.altos' /tmp/report.json)
-          TOTAL=$(jq '.vulnerabilidades | length' /tmp/report.json)
+          CRITICAL=$(jq '.resumen.criticos' "$REPORT_PATH")
+          HIGH=$(jq '.resumen.altos' "$REPORT_PATH")
+          TOTAL=$(jq '.vulnerabilidades | length' "$REPORT_PATH")
           echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
           echo "high=$HIGH" >> $GITHUB_OUTPUT
           echo "total=$TOTAL" >> $GITHUB_OUTPUT
-          cat /tmp/report.json > report.json
+          cp "$REPORT_PATH" report.json
 
       - name: Prepare Fix Branch
         id: prep-branch
         run: |
           TIMESTAMP=$(date +%s)
-          BRANCH_NAME="security/auto-fix-${TIMESTAMP}"
+          BRANCH_NAME="security/remediation-proposal-${TIMESTAMP}"
           echo "branch=$BRANCH_NAME" >> $GITHUB_OUTPUT
           git config user.name "github-actions[bot]"
           EMAIL="41898282+github-actions[bot]@users.noreply.github.com"
           git config user.email "$EMAIL"
           git checkout -b "$BRANCH_NAME"
 
-      - name: Apply Fixes from Report
+      - name: Persist Remediation Proposal
         run: |
-          jq -r '.vulnerabilidades[] |
-            select(.codigo_corregido and .codigo_corregido != "N/A") |
-            "\(.archivo):\(.linea):\(.codigo_corregido)"' report.json \
-            > /tmp/fixes.txt
-          echo "=== Fixes to apply ==="
-          cat /tmp/fixes.txt || echo "No automated fixes available"
           mkdir -p .security
-          cp report.json .security/vulnerabilities-fixed.json
-          git add .security/vulnerabilities-fixed.json
+          cp report.json .security/remediation-proposal.json
+          jq -r '
+            [
+              "# Propuesta de remediacion de seguridad",
+              "",
+              "Hallazgos totales: \(.resumen.total)",
+              "Criticos: \(.resumen.criticos)",
+              "Altos: \(.resumen.altos)",
+              "",
+              "## Hallazgos sugeridos",
+              "",
+              (.vulnerabilidades[] |
+                "- [\(.severidad)] \(.titulo) @ \(.archivo):\(.linea)"
+              )
+            ] | join("\n")
+          ' report.json > .security/remediation-summary.md
+          git add .security/remediation-proposal.json .security/remediation-summary.md
           if ! git diff --cached --quiet; then
-            MSG="fix(security): Auto-remediation of vulnerabilities"
-            MSG="$MSG"$'\n''Applied fixes using OpenAI GPT-4o analysis'
-            MSG="$MSG"$'\n''See .security/vulnerabilities-fixed.json'
+            MSG="fix(security): add remediation proposal from AI audit"
+            MSG="$MSG"$'\n''Generated proposal only; no source files were changed automatically.'
+            MSG="$MSG"$'\n''See .security/remediation-proposal.json and .security/remediation-summary.md'
             git commit -m "$MSG"
           fi
 
@@ -85,30 +111,31 @@ jobs:
             );
             const BRANCH = '${{ steps.prep-branch.outputs.branch }}';
             try {
-              execSync('git push origin ' + BRANCH, { stdio: 'inherit' });
+              execSync('git push --set-upstream origin ' + BRANCH, { stdio: 'inherit' });
             } catch (e) {
               console.log('Branch push failed or already exists');
             }
             const totalVulns = REPORT.vulnerabilidades.length;
             const criticos = REPORT.resumen.criticos;
             const altos = REPORT.resumen.altos;
-            const title = '🔐 Security Auto-Fix: ' + totalVulns +
-              ' vulnerabilities';
+            const title = 'security(proposal): remediation plan for ' + totalVulns +
+              ' findings';
             const vulnList = REPORT.vulnerabilidades
               .map(v => '- ' + v.titulo + ' (' + v.severidad + ') in ' +
                 v.archivo + ':' + v.linea)
               .join('\n');
-            const body = '## 🤖 OpenAI GPT-4o Security Fixes\n\n' +
-              'Automatic remediation PR.\n\n' +
+            const body = '## Security remediation proposal\n\n' +
+              'This PR packages the AI audit output as a remediation proposal.\n' +
+              'It does not apply source-code fixes automatically.\n\n' +
               '### Summary\n\n' +
               '- Total Vulnerabilities: ' + totalVulns + '\n' +
               '- Critical: ' + criticos + '\n' +
               '- High: ' + altos + '\n\n' +
-              '### Vulnerabilities Addressed\n\n' +
+              '### Proposed Findings To Address\n\n' +
               vulnList + '\n\n' +
               '### Important Notes\n\n' +
               '1. Review required before merging\n' +
-              '2. Run tests after applying fixes\n' +
+              '2. Manual implementation is still required\n' +
               '3. Validate critical issues manually\n\n' +
               '---\n\n' +
               'Source PR: #${{ inputs.source-pr }}';
@@ -119,14 +146,14 @@ jobs:
               body: body,
               head: BRANCH,
               base: context.payload.repository.default_branch,
-              draft: criticos > 0
+              draft: true
             });
             console.log('PR created: #' + pr.data.number);
             await github.rest.issues.addLabels({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: pr.data.number,
-              labels: ['security', 'auto-fix', 'ai-remediation']
+              labels: ['security', 'ai-remediation', 'proposal']
             });
             core.setOutput('pr-number', pr.data.number);
 
@@ -152,13 +179,13 @@ jobs:
               console.log('No PR was created');
               return;
             }
-            const comment = '## 🔐 Auto-Remediation Available\n\n' +
-              'OpenAI GPT-4o identified ' +
+            const comment = '## Security Remediation Proposal Available\n\n' +
+              'Azure OpenAI identified ' +
               REPORT.vulnerabilidades.length + ' vulnerabilities ' +
               'and created [#' + prNumber +
               '](../../pull/' + prNumber +
-              ') with suggested fixes.\n\n' +
-              'Review and merge when satisfied.';
+              ') with a remediation proposal.\n\n' +
+              'Review the proposal and implement or validate the changes manually.';
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -169,4 +196,4 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "✅ Auto-remediation workflow completed"
+          echo "✅ Remediation proposal workflow completed"

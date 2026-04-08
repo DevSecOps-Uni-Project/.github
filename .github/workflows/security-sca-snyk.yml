@@ -52,6 +52,16 @@ jobs:
             --org=${{ vars.SNYK_ORG }} \
             || true
 
+          if [ ! -s security-results/snyk-results.json ]; then
+            echo "⚠️ Snyk no generó resultados. Se crea fallback."
+            echo '{"vulnerabilities": []}' > security-results/snyk-results.json
+          fi
+
+          if [ ! -s security-results/snyk.sarif ]; then
+            echo "⚠️ Snyk no generó SARIF. Se crea fallback mínimo."
+            printf '%s\n' '{"version":"2.1.0","runs":[]}' > security-results/snyk.sarif
+          fi
+
           COUNT=$(jq '.vulnerabilities | length' security-results/snyk-results.json)
           echo "Snyk findings detectados: $COUNT"
 
@@ -64,16 +74,6 @@ jobs:
           echo "High: $HIGH"
           echo "Medium: $MEDIUM"
           echo "Low: $LOW"
-
-          if [ ! -s security-results/snyk-results.json ]; then
-            echo "⚠️ Snyk no generó resultados. Se crea fallback."
-            echo '{"vulnerabilities": []}' > security-results/snyk-results.json
-          fi
-
-          if [ ! -s security-results/snyk.sarif ]; then
-            echo "⚠️ Snyk no generó SARIF. Se crea fallback mínimo."
-            printf '%s\n' '{"version":"2.1.0","runs":[]}' > security-results/snyk.sarif
-          fi
 
           echo "=== Snyk JSON Preview ==="
           head -n 40 security-results/snyk-results.json || true
@@ -93,10 +93,8 @@ jobs:
 
       - name: Upload Snyk Report
         uses: actions/upload-artifact@v4
-        if: always() 
+        if: always()
         with:
           name: security-snyk
           path: security-results/snyk-results.json
           if-no-files-found: warn
-
-          

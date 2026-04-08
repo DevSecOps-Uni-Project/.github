@@ -112,7 +112,7 @@ jobs:
       contents: read
       pull-requests: write
       security-events: read
-      actions: read
+      actions: write
     uses: ./.github/workflows/security-final-ia-audit.yml
     with:
       governance-tools-ref: ${{ inputs.governance-tools-ref }}
